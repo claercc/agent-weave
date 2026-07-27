@@ -21,11 +21,11 @@ class VectorDBService:
     def get_or_create_collection(self,collection_name: str) -> chromadb.Collection:
         """获取或创建一个集合"""
         return self._client.get_or_create_collection(
-            collection_name=collection_name
+            name=collection_name
         )
     
     def add_documents(self,collection_name: str,documents: List[str],
-                      metadatas: Optional[Dict[str,Any]] = None,ids: Optional[List[str]] = None):
+                      metadatas: Optional[List[Dict[str,Any]]] = None,ids: Optional[List[str]] = None):
         """添加文档到集合"""
         collection = self.get_or_create_collection(collection_name)
         collection.add(
@@ -44,7 +44,7 @@ class VectorDBService:
                 return [
                     {
                         "document": results["documents"][0][i],
-                        "metadata": results["metadatas"][0][i] if results["metadatas"] else None,
+                        "metadatas": results["metadatas"][0][i] if results["metadatas"] else None,
                         "distance": results["distances"][0][i]
                     }
                     for i in range(len(results["documents"][0]))

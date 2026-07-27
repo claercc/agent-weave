@@ -5,6 +5,7 @@ from app.rag.retriever import Retriever
 from app.rag.chunk import ChunkService
 from app.rag.vectordb import VectorDBService
 from app.rag.embedding import EmbeddingService
+from app.schemas.response import RAGResponse
 
 class RAGService:
     def __init__(self,client: OpenAI,settings: Settings):
@@ -16,22 +17,24 @@ class RAGService:
         self._retriever = Retriever(self._vector_db_service)
     
     def ingest_documents(self,texts: List[str],collection_name: str = "default",
-                         metadata: Optional[Dict[str, Any]] = None):
+                         metadatas: Optional[Dict[str, Any]] = None) -> None:
         """将文本列表分块并存储到向量数据库中
         params:
         texts: 文本列表
         collection_name: 向量数据库中的集合名称
-        metadata: 文档元数据
+        metadatas: 文档元数据
         """
         # 1. 切分文档
         chunks = self._chunk_service.split_texts(texts)
         # 2. 生成唯一 ID
         ids = [f"doc_{i}_{hash(chunk) % 1000000}" for i, chunk in enumerate(chunks)]
+        metadatas_list = [metadatas for _ in range(len(ids))]
+        print(metadatas_list)
         self._vector_db_service.add_documents(
             documents=chunks,
             ids=ids,
             collection_name=collection_name,
-            metadata=metadata
+            metadatas=metadatas_list
         )
     
     def retrieve_context(self,query: str,top_k: int = 4) -> str:
@@ -67,20 +70,20 @@ class RAGService:
             2. 如果上下文没有相关信息，请明确说明"根据提供的信息，我无法回答这个问题"
             3. 回答要简洁明了，不要添加无关内容
             """
-            user_prompt = f"""
-            上下文信息：{context}
-            问题：{query}
-            """
-            response = self._client.chat.completions.create(
-                model=self._settings.model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            return response.choices[0].message.content or ""
+        user_prompt = f"""
+        上下文信息：{context}
+        问题：{query}
+        """
+        response = self._client.chat.completions.create(
+            model=self._settings.model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+        return response.choices[0].message.content or ""
         
-    def query(self,query: str,top_k: int = 4) -> str:
+    def query(self,query: str,top_k: int = 4) -> RAGResponse:
         """
         完整的 RAG 查询流程
         
@@ -90,7 +93,11 @@ class RAGService:
         """
         context = self.retrieve_context(query,top_k)
         answer = self.generate_with_context(query,context)
-        return {"answer": answer, "context": context, "query": query}
+        return RAGResponse(
+            answer=answer,
+            context=context,
+            query=query
+        )
 
 
 

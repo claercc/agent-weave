@@ -1,6 +1,5 @@
-from fastapi import Depends
+from fastapi import APIRouter, Depends
 from openai import OpenAI
-from app.api.router import router
 from app.core.config import Settings,get_settings
 from app.core.openai_client import get_openai_client
 from app.repositories.memory_repository import MemoryConversationRepository
@@ -12,7 +11,7 @@ from app.schemas.request import ChatRequest
 from collections.abc import Iterator
 
 
-
+router = APIRouter(prefix="/chat",tags=["chat"])
 repository = MemoryConversationRepository()
 def get_chat_service(settings: Settings = Depends(get_settings),client: OpenAI = Depends(get_openai_client)) -> ChatService:
     
