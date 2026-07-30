@@ -11,3 +11,9 @@ class RAGResponse(BaseModel):
     answer: str = Field(description="回答")
     context: str = Field(description="上下文")
     query: str = Field(description="查询")
+
+class AgentChatResponse(BaseModel):
+    """智能体聊天响应"""
+    session_id: str = Field(description="会话ID",min_length=1)
+    answer: str = Field(description="Agent 最终回答")
+    used_tools: list[str] = Field(description="使用的工具",default_factory=list)

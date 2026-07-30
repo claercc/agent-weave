@@ -43,5 +43,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """获取配置实例（单例）"""
-    print(Settings().openai_api_key)
     return Settings()

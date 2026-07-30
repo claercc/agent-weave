@@ -20,8 +20,10 @@ def query_rag(request: RAGQueryRequest,rag_service: RAGService = Depends(get_rag
     根据用户查询从知识库中检索相关信息并生成回答
     """
     try:
-        response = rag_service.query(request.query,top_k=request.top_k)
+        logging.info(f"开始查询{request.query}")
+        response = rag_service.query(request.query,request.collection_name,top_k=request.top_k)
     except Exception as e:
+        logging.error(f"查询失败，错误信息：{str(e)}")
         raise HTTPException(status_code=500,detail=str(e))
     return response
 

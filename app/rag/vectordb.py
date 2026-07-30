@@ -38,7 +38,7 @@ class VectorDBService:
                 """搜索集合"""
                 collection = self.get_or_create_collection(collection_name)
                 results = collection.query(
-                    query=query,
+                    query_texts=[query],
                     n_results=n_results
                 )
                 return [

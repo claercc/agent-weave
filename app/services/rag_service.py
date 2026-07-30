@@ -37,7 +37,7 @@ class RAGService:
             metadatas=metadatas_list
         )
     
-    def retrieve_context(self,query: str,top_k: int = 4) -> str:
+    def retrieve_context(self,query: str, collection_name: str, top_k: int = 4) -> str:
         """检索上下文
         params:
         query: 查询文本
@@ -48,6 +48,7 @@ class RAGService:
         """
         results = self._retriever.get_relevant_context(
             query=query,
+            collection_name=collection_name,
             top_k=top_k,
         )
         return results
@@ -83,7 +84,7 @@ class RAGService:
         )
         return response.choices[0].message.content or ""
         
-    def query(self,query: str,top_k: int = 4) -> RAGResponse:
+    def query(self,query: str,collection_name: str,top_k: int = 4) -> RAGResponse:
         """
         完整的 RAG 查询流程
         
@@ -91,7 +92,7 @@ class RAGService:
         :param top_k: 返回文档数量
         :return: 包含回答和来源的字典
         """
-        context = self.retrieve_context(query,top_k)
+        context = self.retrieve_context(query,collection_name,top_k=top_k)
         answer = self.generate_with_context(query,context)
         return RAGResponse(
             answer=answer,
