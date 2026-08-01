@@ -9,19 +9,25 @@ class AgentService:
     def __init__(self, workflow):
         self._workflow = workflow
 
-    def chat(self, session_id: str, message: str) -> AgentChatResponse:
+    def chat(self, session_id: str, message: str,collection_name: str | None = None) -> AgentChatResponse:
         result = self._workflow.invoke(
             {
                 "session_id": session_id,
+                "collection_name": collection_name,
                 "messages": [HumanMessage(content=message)],
             },
-            config={"recursion_limit": 10},
+            config={
+                "configurable": {"thread_id": session_id},
+                "recursion_limit": 10,
+            },
         )
         messages = result["messages"]
-        answer = self._find_final_answer(messages)
+        current_turn_messages = self._get_current_turn_messages(messages)
+
+        answer = self._find_final_answer(current_turn_messages)
         used_tools = [
             tool_call["name"]
-            for graph_message in messages
+            for graph_message in current_turn_messages
             if isinstance(graph_message, AIMessage)
             for tool_call in graph_message.tool_calls
         ]
@@ -41,3 +47,11 @@ class AgentService:
                     else str(message.content)
                 )
         return ""
+
+    @staticmethod
+    def _get_current_turn_messages(messages: list) -> list:
+        for index in range(len(messages) - 1, -1, -1):
+            if isinstance(messages[index], HumanMessage):
+                return messages[index:]
+
+        return messages
