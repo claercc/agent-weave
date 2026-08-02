@@ -79,3 +79,35 @@ def test_agent_service_passes_collection_name_to_workflow():
     assert initial_state["messages"][0].content == (
         "How is the project deployed?"
     )
+
+def test_agent_service_returns_rag_citations():
+    workflow = Mock()
+    workflow.invoke.return_value = {
+        "route": "rag",
+        "messages": [
+            HumanMessage(content="Which framework is used?"),
+            AIMessage(content="The service uses FastAPI [1]."),
+        ],
+        "citations": [
+            {
+                "index": 1,
+                "source": "README.md",
+                "excerpt": "The service uses FastAPI.",
+                "score": 0.8,
+            }
+        ],
+    }
+
+    agent_service = AgentService(workflow)
+
+    response = agent_service.chat(
+        session_id="session-001",
+        message="Which framework is used?",
+        collection_name="engineering",
+    )
+
+    assert response.answer == "The service uses FastAPI [1]."
+    assert len(response.citations) == 1
+    assert response.citations[0].index == 1
+    assert response.citations[0].source == "README.md"
+    assert response.citations[0].score == 0.8

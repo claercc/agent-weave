@@ -28,25 +28,39 @@ def create_agent_workflow(
     tool_service: ToolService,
     checkpointer: BaseCheckpointSaver | None = None,
     retriever: Retriever  | None = None,
+    router_llm: ChatOpenAI | None = None,
 ):
     """Build and compile the minimal ReAct agent workflow."""
     tools = _get_langchain_tools(tool_service)
     builder = StateGraph(State)
+    effective_router_llm = router_llm or llm
     builder.add_node("agent", partial(agent_node, llm=llm, tools=tools))
     if retriever is None:
         builder.add_edge(START, "agent")
     else:
-        builder.add_node("router", route_request)
+        builder.add_node(
+            "router",
+            partial(
+                route_request,
+                router_llm=effective_router_llm,
+            ),
+        )
         builder.add_node("prepare_retrieval_query", prepare_retrieval_query)
         builder.add_node("retrieve", partial(retrieve_documents, retriever=retriever))
         builder.add_node("grade", grade_documents)
         builder.add_node("generate", partial(generate_rag_answer, llm=llm))
         builder.add_node("fallback", fallback_no_relevant_documents)
+        builder.add_node("chat", partial(agent_node, llm=llm, tools=[]))
+
         builder.add_edge(START, "router")
         builder.add_conditional_edges(
             "router", select_request_route,
-              {"rag": "prepare_retrieval_query", 
-               "agent": "agent"})
+              {
+                    "chat": "chat",
+                    "rag": "prepare_retrieval_query",
+                    "agent": "agent"
+
+                  })
         builder.add_edge("prepare_retrieval_query", "retrieve")
         builder.add_edge("retrieve", "grade")
         builder.add_conditional_edges("grade",
@@ -55,6 +69,7 @@ def create_agent_workflow(
                                        "fallback": "fallback"})
         builder.add_edge("fallback", END)
         builder.add_edge("generate", END)
+        builder.add_edge("chat", END)
         
    
 

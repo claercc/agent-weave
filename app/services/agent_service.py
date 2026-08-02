@@ -1,6 +1,7 @@
 from langchain.messages import AIMessage, HumanMessage
 
 from app.schemas.response import AgentChatResponse
+from app.domain.routing import RoutingMode
 
 
 class AgentService:
@@ -9,10 +10,12 @@ class AgentService:
     def __init__(self, workflow):
         self._workflow = workflow
 
-    def chat(self, session_id: str, message: str,collection_name: str | None = None) -> AgentChatResponse:
+    def chat(self, session_id: str, message: str,collection_name: str | None = None,
+             mode: RoutingMode = "auto") -> AgentChatResponse:
         result = self._workflow.invoke(
             {
                 "session_id": session_id,
+                "mode": mode,
                 "collection_name": collection_name,
                 "messages": [HumanMessage(content=message)],
             },
@@ -31,10 +34,16 @@ class AgentService:
             if isinstance(graph_message, AIMessage)
             for tool_call in graph_message.tool_calls
         ]
+        citations = (
+            result.get("citations", [])
+            if result.get("route") == "rag"
+            else []
+        )
         return AgentChatResponse(
             session_id=session_id,
             answer=answer,
             used_tools=used_tools,
+            citations=citations
         )
 
     @staticmethod

@@ -37,7 +37,6 @@ def get_agent_service(
         llm=llm,
         tool_service=tool_service,
         checkpointer=checkpointer,
-        retriepointer=checkpointer,
         retriever=retriever
         )
     return AgentService(workflow)
@@ -48,5 +47,10 @@ def chat_with_agent(
     request: AgentChatRequest,
     agent_service: AgentService = Depends(get_agent_service),
 ) -> AgentChatResponse:
-    return agent_service.chat(request.session_id, request.message,request.collection_name)
+    return agent_service.chat(
+    session_id=request.session_id,
+    message=request.message,
+    collection_name=request.collection_name,
+    mode=request.mode,
+)
 

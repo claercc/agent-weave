@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Any,Self
+from app.domain.routing import RoutingMode
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field,model_validator
 
 class ChatRequest(BaseModel):
     """聊天请求"""
@@ -27,3 +28,10 @@ class AgentChatRequest(BaseModel):
         default=None,
         description="预留的知识库集合名称；当前 Agent MVP 尚未接入 RAG",
     )
+    mode: RoutingMode = Field(description="路由模式",default="auto")
+
+    @model_validator(mode="after")
+    def validate_rag_collection(self) -> Self:
+        if self.mode == "rag" and self.collection_name is None:
+            raise ValueError("RAG 模式下必须指定索引集合名称")
+        return self

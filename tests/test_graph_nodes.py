@@ -1,4 +1,6 @@
 from unittest.mock import Mock
+
+from langchain_openai import ChatOpenAI
 from app.graph.nodes import _get_langchain_tools
 from app.services.tool_service import ToolService
 
@@ -22,6 +24,7 @@ from app.graph.nodes import (
     retrieve_documents,
 )
 from app.rag.retriever import Retriever
+from app.models.routing import RouteDecision
 
 def test_get_langchain_tools_preserves_schema_and_uses_injected_service():
     tool_service = Mock(spec=ToolService)
@@ -181,7 +184,8 @@ def test_route_request_selects_rag_when_collection_is_provided():
 
     result = route_request(state)
 
-    assert result == {"route": "rag"}
+    assert result["route"] == "rag"
+    assert "deterministic fallback" in result["route_reason"]
 
 def test_route_request_selects_agent_without_collection():
     state = {
@@ -192,7 +196,8 @@ def test_route_request_selects_agent_without_collection():
 
     result = route_request(state)
 
-    assert result == {"route": "agent"}
+    assert result["route"] == "agent"
+    assert "deterministic fallback" in result["route_reason"]
 
 def test_prepare_retrieval_query_uses_latest_user_message():
     state = {
@@ -325,3 +330,86 @@ def test_route_after_grading_selects_generate_or_fallback():
 
     assert generate_route == "generate"
     assert fallback_route == "fallback"
+
+def test_route_request_honors_explicit_chat_mode():
+    state = {
+        "session_id": "session-001",
+        "mode": "chat",
+        "collection_name": "engineering",
+        "messages": [],
+    }
+
+    result = route_request(state)
+
+    assert result["route"] == "chat"
+    assert "Explicit chat mode" in (
+        result["route_reason"]
+    )
+
+def test_auto_router_uses_structured_llm_decision():
+    router_llm = Mock(spec=ChatOpenAI)
+    structured_router = Mock()
+
+    router_llm.with_structured_output.return_value = (
+        structured_router
+    )
+    structured_router.invoke.return_value = RouteDecision(
+        route="chat",
+        reason="The user is greeting the assistant.",
+    )
+
+    state = {
+        "session_id": "session-001",
+        "mode": "auto",
+        "collection_name": "engineering",
+        "messages": [
+            HumanMessage(content="hello"),
+        ],
+    }
+
+    result = route_request(
+        state,
+        router_llm=router_llm,
+    )
+
+    assert result == {
+        "route": "chat",
+        "route_reason": (
+            "The user is greeting the assistant."
+        ),
+    }
+
+    router_llm.with_structured_output.assert_called_once_with(
+        RouteDecision
+    )
+    structured_router.invoke.assert_called_once()
+
+def test_auto_router_falls_back_when_llm_fails():
+    router_llm = Mock(spec=ChatOpenAI)
+    structured_router = Mock()
+
+    router_llm.with_structured_output.return_value = (
+        structured_router
+    )
+    structured_router.invoke.side_effect = RuntimeError(
+        "Router unavailable"
+    )
+
+    state = {
+        "session_id": "session-001",
+        "mode": "auto",
+        "collection_name": "engineering",
+        "messages": [
+            HumanMessage(content="hello"),
+        ],
+    }
+
+    result = route_request(
+        state,
+        router_llm=router_llm,
+    )
+
+    assert result["route"] == "rag"
+    assert "deterministic fallback" in (
+        result["route_reason"]
+    )

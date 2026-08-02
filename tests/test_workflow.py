@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 
 from app.graph.workflow import create_agent_workflow
 from app.models.output_model import ToolCallResult
+from app.models.routing import RouteDecision
 from app.services.tool_service import ToolService
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -188,6 +189,7 @@ def test_rag_branch_retrieves_and_generates_answer():
     result = workflow.invoke(
         {
             "session_id": "session-001",
+            "mode": "rag",
             "collection_name": "engineering",
             "messages": [
                 HumanMessage(
@@ -219,6 +221,14 @@ def test_rag_branch_retrieves_and_generates_answer():
     assert "The service uses FastAPI." in (
         generation_messages[1].content
     )
+    assert result["citations"] == [
+    {
+        "index": 1,
+        "source": "README.md",
+        "excerpt": "The service uses FastAPI.",
+        "score": 0.8,
+    }
+    ]
 
 def test_rag_branch_falls_back_without_relevant_documents():
     tool_service = Mock(spec=ToolService)
@@ -237,6 +247,7 @@ def test_rag_branch_falls_back_without_relevant_documents():
 
     result = workflow.invoke(
         {
+            "mode": "rag",
             "session_id": "session-002",
             "collection_name": "engineering",
             "messages": [
@@ -256,3 +267,92 @@ def test_rag_branch_falls_back_without_relevant_documents():
     )
 
     llm.invoke.assert_not_called()
+
+def test_explicit_chat_mode_skips_retrieval():
+    tool_service = Mock(spec=ToolService)
+    tool_service.list_tools.return_value = []
+
+    retriever = Mock(spec=Retriever)
+
+    llm = Mock(spec=ChatOpenAI)
+    llm.invoke.return_value = AIMessage(
+        content="Hello! How can I help you?"
+    )
+
+    workflow = create_agent_workflow(
+        llm=llm,
+        tool_service=tool_service,
+        retriever=retriever,
+    )
+
+    result = workflow.invoke(
+        {
+            "session_id": "session-001",
+            "mode": "chat",
+            "collection_name": "engineering",
+            "messages": [
+                HumanMessage(content="hello"),
+            ],
+        }
+    )
+
+    assert result["route"] == "chat"
+    assert result["messages"][-1].content == (
+        "Hello! How can I help you?"
+    )
+
+    retriever.retrieve.assert_not_called()
+    llm.bind_tools.assert_not_called()
+    llm.invoke.assert_called_once()
+
+
+def test_auto_mode_uses_router_model_and_selects_chat():
+    tool_service = Mock(spec=ToolService)
+    tool_service.list_tools.return_value = []
+
+    retriever = Mock(spec=Retriever)
+
+    router_llm = Mock(spec=ChatOpenAI)
+    structured_router = Mock()
+    router_llm.with_structured_output.return_value = structured_router
+    structured_router.invoke.return_value = RouteDecision(
+        route="chat",
+        reason="The user is greeting the assistant.",
+    )
+
+    llm = Mock(spec=ChatOpenAI)
+    llm.invoke.return_value = AIMessage(
+        content="Hello! How can I help?"
+    )
+
+    workflow = create_agent_workflow(
+        llm=llm,
+        router_llm=router_llm,
+        tool_service=tool_service,
+        retriever=retriever,
+    )
+
+    result = workflow.invoke(
+        {
+            "session_id": "session-001",
+            "mode": "auto",
+            "collection_name": "engineering",
+            "messages": [
+                HumanMessage(content="hello"),
+            ],
+        }
+    )
+
+    assert result["route"] == "chat"
+    assert result["route_reason"] == (
+        "The user is greeting the assistant."
+    )
+    assert result["messages"][-1].content == (
+        "Hello! How can I help?"
+    )
+
+    router_llm.with_structured_output.assert_called_once_with(
+        RouteDecision
+    )
+    retriever.retrieve.assert_not_called()
+    llm.invoke.assert_called_once()

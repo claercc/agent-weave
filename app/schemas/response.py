@@ -12,8 +12,16 @@ class RAGResponse(BaseModel):
     context: str = Field(description="上下文")
     query: str = Field(description="查询")
 
+class CitationResponse(BaseModel):
+    """引用响应"""
+    index: int = Field(description="引用索引")
+    source: str = Field(description="引用来源")
+    excerpt: str = Field(description="引用摘录")
+    score: float | None = Field(description="引用分数",default=None)
+
 class AgentChatResponse(BaseModel):
     """智能体聊天响应"""
     session_id: str = Field(description="会话ID",min_length=1)
     answer: str = Field(description="Agent 最终回答")
     used_tools: list[str] = Field(description="使用的工具",default_factory=list)
+    citations: list[CitationResponse] = Field(description="引用列表",default_factory=list)
