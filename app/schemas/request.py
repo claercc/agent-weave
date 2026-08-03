@@ -16,9 +16,9 @@ class RAGQueryRequest(BaseModel):
 
 class RAGIngestRequest(BaseModel):
     """RAG 索引请求"""
-    texts: list[str] = Field(description="文档列表",min_items=1)
+    texts: list[str] = Field(description="文档列表",min_length=1)
     collection_name: str = Field(description="索引集合名称",min_length=1)
-    metadatas: dict[str, Any] = Field(description="文档元数据",default={})
+    metadatas: dict[str, Any] = Field(description="文档元数据",default=dict)
 
 class AgentChatRequest(BaseModel):
     """智能体聊天请求"""

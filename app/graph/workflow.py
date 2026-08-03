@@ -47,7 +47,7 @@ def create_agent_workflow(
         )
         builder.add_node("prepare_retrieval_query", prepare_retrieval_query)
         builder.add_node("retrieve", partial(retrieve_documents, retriever=retriever))
-        builder.add_node("grade", grade_documents)
+        builder.add_node("grade", partial(grade_documents,min_score=0.4))
         builder.add_node("generate", partial(generate_rag_answer, llm=llm))
         builder.add_node("fallback", fallback_no_relevant_documents)
         builder.add_node("chat", partial(agent_node, llm=llm, tools=[]))

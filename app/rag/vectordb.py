@@ -28,7 +28,7 @@ class VectorDBService:
                       metadatas: Optional[List[Dict[str,Any]]] = None,ids: Optional[List[str]] = None):
         """添加文档到集合"""
         collection = self.get_or_create_collection(collection_name)
-        collection.add(
+        collection.upsert(
             documents=documents,
             metadatas=metadatas,
             ids=ids

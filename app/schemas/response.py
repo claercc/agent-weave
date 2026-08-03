@@ -25,3 +25,10 @@ class AgentChatResponse(BaseModel):
     answer: str = Field(description="Agent 最终回答")
     used_tools: list[str] = Field(description="使用的工具",default_factory=list)
     citations: list[CitationResponse] = Field(description="引用列表",default_factory=list)
+
+class PDFInfoResponse(BaseModel):
+    """PDF 信息响应"""
+    message: str = Field(description="导入结果")
+    filename: str = Field(description="PDF文件名")
+    collection_name: str = Field(description="目标知识库名称")
+    chunk_count: int = Field(description="文档分块数量",ge=0)

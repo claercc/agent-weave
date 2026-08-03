@@ -6,6 +6,9 @@ from app.rag.chunk import ChunkService
 from app.rag.vectordb import VectorDBService
 from app.rag.embedding import EmbeddingService
 from app.schemas.response import RAGResponse
+import hashlib
+from langchain_core.documents import Document
+from app.rag.pdf_loader import PdfDocumentLoader
 
 class RAGService:
     def __init__(self,client: OpenAI,settings: Settings):
@@ -15,6 +18,7 @@ class RAGService:
         self._embedding_service = EmbeddingService(client,settings)
         self._vector_db_service = VectorDBService()
         self._retriever = Retriever(self._vector_db_service)
+        self._pdf_loader = PdfDocumentLoader()
     
     def ingest_documents(self,texts: List[str],collection_name: str = "default",
                          metadatas: Optional[Dict[str, Any]] = None) -> None:
@@ -100,6 +104,51 @@ class RAGService:
             query=query
         )
 
+    def ingest_pdf(self,content: bytes,filename: str,collection_name: str = "default",) -> int:
+        """将 PDF 内容分块并存储到向量数据库中
+        params:
+        content: PDF 内容字节流
+        filename: PDF 文件名
+        collection_name: 向量数据库中的集合名称
+        metadatas: 文档元数据
+        """
+        source_documents = self._pdf_loader.load(
+            content=content,
+            filename=filename,
+        )
+        chunks = self._chunk_service.split_documents(source_documents)
+        ids = [
+            self._build_chunk_id(
+                collection_name=collection_name,
+                chunk=chunk,
+            )
+            for chunk in chunks
+        ]
+        self._vector_db_service.add_documents(
+            documents=[chunk.page_content for chunk in chunks],
+            ids=ids,
+            collection_name=collection_name,
+            metadatas=[
+                chunk.metadata for chunk in chunks
+            ]
+        )
+        return len(chunks)
 
+    @staticmethod
+    def _build_chunk_id(collection_name: str, chunk: Document) -> str:
+        """根据知识库、来源和内容生成稳定 ID。"""
+        identity = "|".join(
+            [
+                collection_name,
+                str(chunk.metadata.get("source", "")),
+                str(chunk.metadata.get("page", "")),
+                str(chunk.metadata.get("chunk_index", "")),
+                chunk.page_content,
+            ]
+        )
+
+        return hashlib.sha256(
+            identity.encode("utf-8")
+        ).hexdigest()
 
 
