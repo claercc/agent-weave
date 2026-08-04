@@ -1,14 +1,13 @@
 from functools import lru_cache
 
 from openai import OpenAI
-from app.core.config import Settings,get_settings
-
+from app.core.config import Settings, get_settings
 
 
 @lru_cache()
 def get_openai_client() -> OpenAI:
+    """获取OpenAI客户端实例"""
     settings: Settings = get_settings()
-    return OpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_api_base
-    )
+    api_key = settings.require_openai_api_key()
+    return OpenAI(api_key=api_key.get_secret_value(),
+                  base_url=settings.openai_api_base)

@@ -13,15 +13,20 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.rag.retriever import Retriever
 from app.rag.vectordb import VectorDBService
 
-
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+
 @lru_cache()
 def get_agent_retriever() -> Retriever:
     vector_db_service = VectorDBService()
     return Retriever(vector_db_service)
+
+
 @lru_cache()
 def get_agent_checkpointer() -> InMemorySaver:
     return InMemorySaver()
+
+
 def get_agent_service(
     settings: Settings = Depends(get_settings),
     tool_service: ToolService = Depends(get_tool_service),
@@ -30,15 +35,15 @@ def get_agent_service(
 ) -> AgentService:
     llm = ChatOpenAI(
         model=settings.model_name,
-        api_key=settings.openai_api_key,
+        api_key=settings.require_openai_api_key(),
         base_url=settings.openai_api_base,
     )
     workflow = create_agent_workflow(
         llm=llm,
         tool_service=tool_service,
         checkpointer=checkpointer,
-        retriever=retriever
-        )
+        retriever=retriever,
+    )
     return AgentService(workflow)
 
 
@@ -48,9 +53,8 @@ def chat_with_agent(
     agent_service: AgentService = Depends(get_agent_service),
 ) -> AgentChatResponse:
     return agent_service.chat(
-    session_id=request.session_id,
-    message=request.message,
-    collection_name=request.collection_name,
-    mode=request.mode,
-)
-
+        session_id=request.session_id,
+        message=request.message,
+        collection_name=request.collection_name,
+        mode=request.mode,
+    )

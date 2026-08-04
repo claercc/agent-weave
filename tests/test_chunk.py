@@ -10,9 +10,7 @@ def test_split_documents_preserves_metadata() -> None:
     )
     source_document = Document(
         page_content=(
-            "Visit Sensoji early. "
-            "Take the train to Ueno. "
-            "Eat sushi at noon."
+            "Visit Sensoji early. " "Take the train to Ueno. " "Eat sushi at noon."
         ),
         metadata={
             "source": "tokyo-guide.pdf",
@@ -21,22 +19,15 @@ def test_split_documents_preserves_metadata() -> None:
         },
     )
 
-    chunks = chunk_service.split_documents(
-        [source_document]
-    )
+    chunks = chunk_service.split_documents([source_document])
 
     assert len(chunks) > 1
 
     for chunk in chunks:
-        assert chunk.metadata["source"] == (
-            "tokyo-guide.pdf"
-        )
+        assert chunk.metadata["source"] == ("tokyo-guide.pdf")
         assert chunk.metadata["page"] == 3
-        assert chunk.metadata["content_type"] == (
-            "application/pdf"
-        )
+        assert chunk.metadata["content_type"] == ("application/pdf")
 
-    assert [
-        chunk.metadata["chunk_index"]
-        for chunk in chunks
-    ] == list(range(len(chunks)))
+    assert [chunk.metadata["chunk_index"] for chunk in chunks] == list(
+        range(len(chunks))
+    )

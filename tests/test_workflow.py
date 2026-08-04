@@ -89,6 +89,7 @@ def test_agent_workflow_executes_tool_and_returns_final_answer():
         city="Singapore",
     )
 
+
 def test_agent_remembers_messages_in_same_session():
     tool_service = Mock(spec=ToolService)
     tool_service.list_tools.return_value = []
@@ -115,9 +116,7 @@ def test_agent_remembers_messages_in_same_session():
         message="What is my name?",
     )
 
-    assert first_response.answer == (
-        "I will remember that your name is Alice."
-    )
+    assert first_response.answer == ("I will remember that your name is Alice.")
     assert second_response.answer == "Your name is Alice."
 
     second_call_messages = llm.invoke.call_args_list[1].args[0]
@@ -127,6 +126,7 @@ def test_agent_remembers_messages_in_same_session():
         "I will remember that your name is Alice."
     )
     assert second_call_messages[3].content == "What is my name?"
+
 
 def test_agent_keeps_different_sessions_isolated():
     tool_service = Mock(spec=ToolService)
@@ -160,6 +160,7 @@ def test_agent_keeps_different_sessions_isolated():
     assert len(second_call_messages) == 2
     assert second_call_messages[1].content == "What is my name?"
 
+
 def test_rag_branch_retrieves_and_generates_answer():
     tool_service = Mock(spec=ToolService)
     tool_service.list_tools.return_value = []
@@ -176,9 +177,7 @@ def test_rag_branch_retrieves_and_generates_answer():
     ]
 
     llm = Mock(spec=ChatOpenAI)
-    llm.invoke.return_value = AIMessage(
-        content="The service uses FastAPI [1]."
-    )
+    llm.invoke.return_value = AIMessage(content="The service uses FastAPI [1].")
 
     workflow = create_agent_workflow(
         llm=llm,
@@ -191,22 +190,14 @@ def test_rag_branch_retrieves_and_generates_answer():
             "session_id": "session-001",
             "mode": "rag",
             "collection_name": "engineering",
-            "messages": [
-                HumanMessage(
-                    content="Which framework does the service use?"
-                )
-            ],
+            "messages": [HumanMessage(content="Which framework does the service use?")],
         }
     )
 
     assert result["route"] == "rag"
-    assert result["retrieval_query"] == (
-        "Which framework does the service use?"
-    )
+    assert result["retrieval_query"] == ("Which framework does the service use?")
     assert len(result["retrieved_documents"]) == 1
-    assert result["messages"][-1].content == (
-        "The service uses FastAPI [1]."
-    )
+    assert result["messages"][-1].content == ("The service uses FastAPI [1].")
 
     retriever.retrieve.assert_called_once_with(
         query="Which framework does the service use?",
@@ -218,17 +209,16 @@ def test_rag_branch_retrieves_and_generates_answer():
     generation_messages = llm.invoke.call_args.args[0]
 
     assert "README.md" in generation_messages[1].content
-    assert "The service uses FastAPI." in (
-        generation_messages[1].content
-    )
+    assert "The service uses FastAPI." in (generation_messages[1].content)
     assert result["citations"] == [
-    {
-        "index": 1,
-        "source": "README.md",
-        "excerpt": "The service uses FastAPI.",
-        "score": 0.8,
-    }
+        {
+            "index": 1,
+            "source": "README.md",
+            "excerpt": "The service uses FastAPI.",
+            "score": 0.8,
+        }
     ]
+
 
 def test_rag_branch_falls_back_without_relevant_documents():
     tool_service = Mock(spec=ToolService)
@@ -251,9 +241,7 @@ def test_rag_branch_falls_back_without_relevant_documents():
             "session_id": "session-002",
             "collection_name": "engineering",
             "messages": [
-                HumanMessage(
-                    content="What is the internal deployment password?"
-                )
+                HumanMessage(content="What is the internal deployment password?")
             ],
         }
     )
@@ -262,11 +250,11 @@ def test_rag_branch_falls_back_without_relevant_documents():
     assert result["has_relevant_documents"] is False
     assert result["retrieved_documents"] == []
     assert result["messages"][-1].content == (
-        "根据当前知识库中检索到的信息，"
-        "我无法回答这个问题。"
+        "根据当前知识库中检索到的信息，" "我无法回答这个问题。"
     )
 
     llm.invoke.assert_not_called()
+
 
 def test_explicit_chat_mode_skips_retrieval():
     tool_service = Mock(spec=ToolService)
@@ -275,9 +263,7 @@ def test_explicit_chat_mode_skips_retrieval():
     retriever = Mock(spec=Retriever)
 
     llm = Mock(spec=ChatOpenAI)
-    llm.invoke.return_value = AIMessage(
-        content="Hello! How can I help you?"
-    )
+    llm.invoke.return_value = AIMessage(content="Hello! How can I help you?")
 
     workflow = create_agent_workflow(
         llm=llm,
@@ -297,9 +283,7 @@ def test_explicit_chat_mode_skips_retrieval():
     )
 
     assert result["route"] == "chat"
-    assert result["messages"][-1].content == (
-        "Hello! How can I help you?"
-    )
+    assert result["messages"][-1].content == ("Hello! How can I help you?")
 
     retriever.retrieve.assert_not_called()
     llm.bind_tools.assert_not_called()
@@ -321,9 +305,7 @@ def test_auto_mode_uses_router_model_and_selects_chat():
     )
 
     llm = Mock(spec=ChatOpenAI)
-    llm.invoke.return_value = AIMessage(
-        content="Hello! How can I help?"
-    )
+    llm.invoke.return_value = AIMessage(content="Hello! How can I help?")
 
     workflow = create_agent_workflow(
         llm=llm,
@@ -344,15 +326,9 @@ def test_auto_mode_uses_router_model_and_selects_chat():
     )
 
     assert result["route"] == "chat"
-    assert result["route_reason"] == (
-        "The user is greeting the assistant."
-    )
-    assert result["messages"][-1].content == (
-        "Hello! How can I help?"
-    )
+    assert result["route_reason"] == ("The user is greeting the assistant.")
+    assert result["messages"][-1].content == ("Hello! How can I help?")
 
-    router_llm.with_structured_output.assert_called_once_with(
-        RouteDecision
-    )
+    router_llm.with_structured_output.assert_called_once_with(RouteDecision)
     retriever.retrieve.assert_not_called()
     llm.invoke.assert_called_once()

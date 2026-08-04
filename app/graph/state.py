@@ -3,12 +3,15 @@ from typing import Any, NotRequired, TypedDict
 from langgraph.graph import MessagesState
 from app.domain.routing import Route, RoutingMode
 
+
 class Citation(TypedDict):
     """一个结构化的引用返回了一个RAG答案"""
+
     index: int
     source: str
-    excerpt: str #摘录
+    excerpt: str  # 摘录
     score: float | None
+
 
 class RetrievedDocument(TypedDict):
     """检索层返回的文档"""

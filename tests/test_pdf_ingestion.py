@@ -12,9 +12,7 @@ def create_test_client(
     app = FastAPI()
     app.include_router(router, prefix="/api")
 
-    app.dependency_overrides[get_rag_service] = (
-        lambda: rag_service
-    )
+    app.dependency_overrides[get_rag_service] = lambda: rag_service
 
     return TestClient(app)
 
@@ -41,10 +39,10 @@ def test_pdf_ingestion_accepts_multipart_upload() -> None:
 
     assert response.status_code == 200
     assert response.json() == {
-    "message": "PDF 导入成功",
-    "filename": "guide.pdf",
-    "collection_name": "guides",
-    "chunk_count": 3,
+        "message": "PDF 导入成功",
+        "filename": "guide.pdf",
+        "collection_name": "guides",
+        "chunk_count": 3,
     }
 
     rag_service.ingest_pdf.assert_called_once_with(
@@ -73,18 +71,14 @@ def test_pdf_ingestion_rejects_non_pdf_file() -> None:
     )
 
     assert response.status_code == 400
-    assert response.json() == {
-        "detail": "文件必须是 PDF 格式"
-    }
+    assert response.json() == {"detail": "文件必须是 PDF 格式"}
 
     rag_service.ingest_pdf.assert_not_called()
 
 
 def test_pdf_ingestion_maps_invalid_pdf_to_400() -> None:
     rag_service = Mock()
-    rag_service.ingest_pdf.side_effect = ValueError(
-        "Unable to read PDF"
-    )
+    rag_service.ingest_pdf.side_effect = ValueError("Unable to read PDF")
 
     client = create_test_client(rag_service)
 
@@ -103,6 +97,4 @@ def test_pdf_ingestion_maps_invalid_pdf_to_400() -> None:
     )
 
     assert response.status_code == 400
-    assert response.json() == {
-        "detail": "Unable to read PDF"
-    }
+    assert response.json() == {"detail": "Unable to read PDF"}

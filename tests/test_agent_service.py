@@ -55,6 +55,7 @@ def test_used_tools_only_contains_tools_from_current_turn():
     assert first_response.used_tools == ["get_weather"]
     assert second_response.used_tools == []
 
+
 def test_agent_service_passes_collection_name_to_workflow():
     workflow = Mock()
     workflow.invoke.return_value = {
@@ -76,9 +77,8 @@ def test_agent_service_passes_collection_name_to_workflow():
 
     assert initial_state["session_id"] == "session-001"
     assert initial_state["collection_name"] == "engineering"
-    assert initial_state["messages"][0].content == (
-        "How is the project deployed?"
-    )
+    assert initial_state["messages"][0].content == ("How is the project deployed?")
+
 
 def test_agent_service_returns_rag_citations():
     workflow = Mock()

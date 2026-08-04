@@ -6,12 +6,14 @@ import numpy as np
 from PIL import Image
 from rapidocr import RapidOCR
 
+
 class OCRService(Protocol):
     """OCR 服务"""
 
     def extract_text(self, image_content: bytes) -> str:
         """从图像中提取文本"""
         ...
+
 
 class RapidOCRService:
     """使用 RapidOCR 实现本地文字识别。"""
@@ -30,6 +32,7 @@ class RapidOCRService:
         results = self._engine(image_array)
         texts = results.txts or ()
         return "\n".join(text.strip() for text in texts if text and text.strip())
+
 
 @lru_cache(maxsize=1)
 def get_ocr_service() -> OCRService:

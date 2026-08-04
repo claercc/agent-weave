@@ -26,6 +26,7 @@ from app.graph.nodes import (
 from app.rag.retriever import Retriever
 from app.models.routing import RouteDecision
 
+
 def test_get_langchain_tools_preserves_schema_and_uses_injected_service():
     tool_service = Mock(spec=ToolService)
     tool_service.list_tools.return_value = [
@@ -59,6 +60,8 @@ def test_get_langchain_tools_preserves_schema_and_uses_injected_service():
         "get_weather",
         city="Shanghai",
     )
+
+
 def test_convert_domain_messages_to_langchain_messages():
     # Arrange
     messages = [
@@ -80,6 +83,8 @@ def test_convert_domain_messages_to_langchain_messages():
 
     assert isinstance(result[2], AIMessage)
     assert result[2].content == "hi"
+
+
 def test_route_after_agent_ends_when_model_returns_final_answer():
     state = {
         "session_id": "session-001",
@@ -91,6 +96,8 @@ def test_route_after_agent_ends_when_model_returns_final_answer():
     result = route_after_agent(state)
 
     assert result == "end"
+
+
 def test_route_after_agent_routes_to_tools_when_model_requests_tool():
     state = {
         "session_id": "session-001",
@@ -112,6 +119,7 @@ def test_route_after_agent_routes_to_tools_when_model_requests_tool():
     result = route_after_agent(state)
 
     assert result == "tools"
+
 
 def test_tool_node_executes_tool_call_and_returns_tool_message():
     tool_service = Mock(spec=ToolService)
@@ -175,6 +183,7 @@ def test_tool_node_executes_tool_call_and_returns_tool_message():
         city="Singapore",
     )
 
+
 def test_route_request_selects_rag_when_collection_is_provided():
     state = {
         "session_id": "session-001",
@@ -187,6 +196,7 @@ def test_route_request_selects_rag_when_collection_is_provided():
     assert result["route"] == "rag"
     assert "deterministic fallback" in result["route_reason"]
 
+
 def test_route_request_selects_agent_without_collection():
     state = {
         "session_id": "session-001",
@@ -198,6 +208,7 @@ def test_route_request_selects_agent_without_collection():
 
     assert result["route"] == "agent"
     assert "deterministic fallback" in result["route_reason"]
+
 
 def test_prepare_retrieval_query_uses_latest_user_message():
     state = {
@@ -214,6 +225,7 @@ def test_prepare_retrieval_query_uses_latest_user_message():
     assert result == {
         "retrieval_query": "Latest question",
     }
+
 
 def test_retrieve_documents_returns_normalized_documents():
     retriever = Mock(spec=Retriever)
@@ -258,6 +270,7 @@ def test_retrieve_documents_returns_normalized_documents():
         top_k=3,
     )
 
+
 def test_grade_documents_filters_low_score_documents():
     relevant_document = {
         "content": "The service uses FastAPI.",
@@ -289,6 +302,7 @@ def test_grade_documents_filters_low_score_documents():
         "has_relevant_documents": True,
     }
 
+
 def test_grade_documents_marks_empty_result_as_not_relevant():
     state = {
         "session_id": "session-001",
@@ -312,6 +326,7 @@ def test_grade_documents_marks_empty_result_as_not_relevant():
         "has_relevant_documents": False,
     }
 
+
 def test_route_after_grading_selects_generate_or_fallback():
     generate_route = route_after_grading(
         {
@@ -331,6 +346,7 @@ def test_route_after_grading_selects_generate_or_fallback():
     assert generate_route == "generate"
     assert fallback_route == "fallback"
 
+
 def test_route_request_honors_explicit_chat_mode():
     state = {
         "session_id": "session-001",
@@ -342,17 +358,14 @@ def test_route_request_honors_explicit_chat_mode():
     result = route_request(state)
 
     assert result["route"] == "chat"
-    assert "Explicit chat mode" in (
-        result["route_reason"]
-    )
+    assert "Explicit chat mode" in (result["route_reason"])
+
 
 def test_auto_router_uses_structured_llm_decision():
     router_llm = Mock(spec=ChatOpenAI)
     structured_router = Mock()
 
-    router_llm.with_structured_output.return_value = (
-        structured_router
-    )
+    router_llm.with_structured_output.return_value = structured_router
     structured_router.invoke.return_value = RouteDecision(
         route="chat",
         reason="The user is greeting the assistant.",
@@ -374,26 +387,19 @@ def test_auto_router_uses_structured_llm_decision():
 
     assert result == {
         "route": "chat",
-        "route_reason": (
-            "The user is greeting the assistant."
-        ),
+        "route_reason": ("The user is greeting the assistant."),
     }
 
-    router_llm.with_structured_output.assert_called_once_with(
-        RouteDecision
-    )
+    router_llm.with_structured_output.assert_called_once_with(RouteDecision)
     structured_router.invoke.assert_called_once()
+
 
 def test_auto_router_falls_back_when_llm_fails():
     router_llm = Mock(spec=ChatOpenAI)
     structured_router = Mock()
 
-    router_llm.with_structured_output.return_value = (
-        structured_router
-    )
-    structured_router.invoke.side_effect = RuntimeError(
-        "Router unavailable"
-    )
+    router_llm.with_structured_output.return_value = structured_router
+    structured_router.invoke.side_effect = RuntimeError("Router unavailable")
 
     state = {
         "session_id": "session-001",
@@ -410,6 +416,4 @@ def test_auto_router_falls_back_when_llm_fails():
     )
 
     assert result["route"] == "rag"
-    assert "deterministic fallback" in (
-        result["route_reason"]
-    )
+    assert "deterministic fallback" in (result["route_reason"])

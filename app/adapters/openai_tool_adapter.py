@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 
 from app.tools.base import BaseTool
 
+
 class OpenAIToolAdapter:
     """OpenAI 工具适配器"""
 
@@ -21,4 +22,3 @@ class OpenAIToolAdapter:
             for tool in tools
         ]
         return openai_tools
-        

@@ -1,0 +1,16 @@
+[flake8]
+; 允许每行最多 88 个字符，与 Black 的默认规则保持一致
+max-line-length = 88
+; 忽略 E203 规则，因为它可能与 Black 的切片格式产生冲突。
+; 这里不是关闭全部检查，只关闭一个有冲突的旧格式规则
+extend-ignore = E203
+; 告诉 Flake8 不要检查后面列出的目录
+exclude =
+    .git,
+    .venv,
+    __pycache__,
+    .pytest_cache,
+    .mypy_cache,
+    build,
+    dist,
+    *.egg-info

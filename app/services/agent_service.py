@@ -7,11 +7,16 @@ from app.domain.routing import RoutingMode
 class AgentService:
     """Run the LangGraph agent and map its state to an API response."""
 
-    def __init__(self, workflow):
+    def __init__(self, workflow) -> None:
         self._workflow = workflow
 
-    def chat(self, session_id: str, message: str,collection_name: str | None = None,
-             mode: RoutingMode = "auto") -> AgentChatResponse:
+    def chat(
+        self,
+        session_id: str,
+        message: str,
+        collection_name: str | None = None,
+        mode: RoutingMode = "auto",
+    ) -> AgentChatResponse:
         result = self._workflow.invoke(
             {
                 "session_id": session_id,
@@ -34,16 +39,12 @@ class AgentService:
             if isinstance(graph_message, AIMessage)
             for tool_call in graph_message.tool_calls
         ]
-        citations = (
-            result.get("citations", [])
-            if result.get("route") == "rag"
-            else []
-        )
+        citations = result.get("citations", []) if result.get("route") == "rag" else []
         return AgentChatResponse(
             session_id=session_id,
             answer=answer,
             used_tools=used_tools,
-            citations=citations
+            citations=citations,
         )
 
     @staticmethod
