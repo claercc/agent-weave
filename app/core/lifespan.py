@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.services.tool_service import init_tools
 
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """应用启动时初始化工具"""

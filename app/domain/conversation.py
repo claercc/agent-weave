@@ -33,7 +33,7 @@ class Conversation(BaseModel):
         """批量添加消息"""
         self.messages.extend(messages)
 
-    def get_messages(self) -> list[Message] :
+    def get_messages(self) -> list[Message]:
         """返回消息副本"""
         return self.messages.copy()
 

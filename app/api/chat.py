@@ -31,7 +31,9 @@ def get_chat_service(
 
 
 @router.post("")
-def chat(request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)):
+def chat(
+    request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)
+) -> dict[str, str]:
     answer = chat_service.chat(request.session_id, request.message)
     return {"answer": answer}
 
@@ -44,5 +46,7 @@ def stream_chat(
 
 
 @router.post("/tools")
-def tools(request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)):
+def tools(
+    request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)
+) -> str:
     return chat_service.chat_with_tool_calling(request.session_id, request.message)

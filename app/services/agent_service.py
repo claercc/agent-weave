@@ -2,12 +2,13 @@ from langchain.messages import AIMessage, HumanMessage
 
 from app.schemas.response import AgentChatResponse
 from app.domain.routing import RoutingMode
+from typing import Any
 
 
 class AgentService:
     """Run the LangGraph agent and map its state to an API response."""
 
-    def __init__(self, workflow) -> None:
+    def __init__(self, workflow: Any) -> None:
         self._workflow = workflow
 
     def chat(
@@ -48,7 +49,7 @@ class AgentService:
         )
 
     @staticmethod
-    def _find_final_answer(messages: list) -> str:
+    def _find_final_answer(messages: list[Any]) -> str:
         for message in reversed(messages):
             if isinstance(message, AIMessage) and not message.tool_calls:
                 return (
@@ -59,7 +60,7 @@ class AgentService:
         return ""
 
     @staticmethod
-    def _get_current_turn_messages(messages: list) -> list:
+    def _get_current_turn_messages(messages: list[Any]) -> list[Any]:
         for index in range(len(messages) - 1, -1, -1):
             if isinstance(messages[index], HumanMessage):
                 return messages[index:]

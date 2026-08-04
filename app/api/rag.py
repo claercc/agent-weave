@@ -27,7 +27,7 @@ def get_rag_service(
 @router.post("/query", response_model=RAGResponse)
 def query_rag(
     request: RAGQueryRequest, rag_service: RAGService = Depends(get_rag_service)
-):
+) -> RAGResponse:
     """
     RAG 查询接口
     根据用户查询从知识库中检索相关信息并生成回答
@@ -46,7 +46,7 @@ def query_rag(
 @router.post("/ingest")
 def rag_ingest(
     request: RAGIngestRequest, rag_service: RAGService = Depends(get_rag_service)
-):
+) -> dict[str, str]:
     """
     RAG 文档导入接口
     将文档导入到向量数据库中
@@ -66,7 +66,9 @@ def rag_ingest(
 
 
 @router.get("/collections")
-def get_collections(rag_service: RAGService = Depends(get_rag_service)):
+def get_collections(
+    rag_service: RAGService = Depends(get_rag_service),
+) -> dict[str, list[str]]:
     """
     列出所有向量数据库集合
     """
@@ -76,7 +78,7 @@ def get_collections(rag_service: RAGService = Depends(get_rag_service)):
 @router.delete("/collections/{collection_name}")
 def delete_collection(
     collection_name: str, rag_service: RAGService = Depends(get_rag_service)
-):
+) -> dict[str, str]:
     """
     删除向量数据库集合
     """

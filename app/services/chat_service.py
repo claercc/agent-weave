@@ -6,6 +6,10 @@ from app.domain.message import Message, MessageRole
 from app.adapters.openai_message_adapter import OpenAIMessageAdapter
 from app.services.conversation_service import ConversationService
 from app.services.tool_service import ToolService
+from typing import cast
+from openai.types.chat import (
+    ChatCompletionToolParam, ChatCompletionMessageFunctionToolCall
+)
 
 
 class ChatService:
@@ -17,7 +21,7 @@ class ChatService:
         settings: Settings,
         conversation_service: ConversationService,
         tool_service: ToolService,
-    ):
+    ) -> None:
         self._client = client
         self._settings = settings
         self._conversation_service = conversation_service
@@ -67,7 +71,7 @@ class ChatService:
         """聊天并使用工具调用"""
         conversation = self._conversation_service.get_or_create(session_id)
         conversation.add_message(Message(role=MessageRole.USER, content=message))
-        tools = self._tool_service.list_tools()
+        tools = cast(list[ChatCompletionToolParam], self._tool_service.list_tools())
         print(tools)
         response = self._client.chat.completions.create(
             model=self._settings.model_name,
@@ -80,10 +84,9 @@ class ChatService:
             if response.choices[0].message.tool_calls
             else None
         )
-        print(tool_call)
-        if tool_call:
+        if isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
             tool_result = self._tool_service.execute_tool(
-                tool_call["function"]["name"], **tool_call["function"]["arguments"]
+                tool_call.function.name, arguments=tool_call.function.arguments
             )
 
             conversation.add_message(

@@ -43,7 +43,6 @@ class WeatherTool(BaseTool):
     def run(self, **kwargs: Any) -> str:
         """获取指定城市的天气信息"""
 
-
         city = kwargs.get("city")
 
         if not isinstance(city, str) or not city.strip():

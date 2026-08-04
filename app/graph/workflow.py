@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
@@ -26,10 +27,10 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 def create_agent_workflow(
     llm: ChatOpenAI,
     tool_service: ToolService,
-    checkpointer: BaseCheckpointSaver | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
     retriever: Retriever | None = None,
     router_llm: ChatOpenAI | None = None,
-):
+) -> Any:
     """Build and compile the minimal ReAct agent workflow."""
     tools = _get_langchain_tools(tool_service)
     builder = StateGraph(State)

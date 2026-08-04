@@ -3,9 +3,9 @@ from functools import lru_cache
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 # Pydantic 提供的配置基类，自动从环境变量和 .env 文件加载配置
 # 支持环境变量优先加载，.env 文件中的配置会覆盖环境变量中的配置
+
 
 # 配置模型，指定环境变量文件路径、编码和额外配置
 # extra="ignore" 表示忽略 .env 文件中未定义的环境变量
@@ -48,8 +48,6 @@ class Settings(BaseSettings):
         description="默认的聊天模型名称",
     )
 
-
-
     openweather_api_key: SecretStr | None = Field(
         default=None,
         validation_alias="OPENWEATHER_API_KEY",
@@ -65,17 +63,13 @@ class Settings(BaseSettings):
     def require_openai_api_key(self) -> SecretStr:
         """返回OpenAI兼容模型提供者的API密钥，或抛出运行时错误"""
         if self.openai_api_key is None:
-            raise RuntimeError(
-                "OPENAI_API_KEY is required."
-            )
+            raise RuntimeError("OPENAI_API_KEY is required.")
         return self.openai_api_key
 
     def require_openweather_api_key(self) -> SecretStr:
         """返回OpenWeatherMap API密钥，或抛出运行时错误"""
         if self.openweather_api_key is None:
-            raise RuntimeError(
-                "OPENWEATHER_API_KEY is required for weather requests."
-            )
+            raise RuntimeError("OPENWEATHER_API_KEY is required for weather requests.")
         return self.openweather_api_key
 
 

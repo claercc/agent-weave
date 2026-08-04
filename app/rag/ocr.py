@@ -18,7 +18,7 @@ class OCRService(Protocol):
 class RapidOCRService:
     """使用 RapidOCR 实现本地文字识别。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._engine = RapidOCR()
 
     def extract_text(self, image_content: bytes) -> str:
@@ -30,7 +30,7 @@ class RapidOCRService:
             image_array = np.array(rab_image)
 
         results = self._engine(image_array)
-        texts = results.txts or ()
+        texts = getattr(results, "txts", None) or ()
         return "\n".join(text.strip() for text in texts if text and text.strip())
 
 

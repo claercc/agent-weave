@@ -1,5 +1,7 @@
-from typing import Any
+from typing import Any, TypeGuard
+
 from app.tools.base import BaseTool
+
 
 class CalculatorTool(BaseTool):
     """计算器工具"""
@@ -66,9 +68,6 @@ class CalculatorTool(BaseTool):
         raise ValueError(f"不支持的运算类型：{operator}")
 
     @staticmethod
-    def _is_number(value: Any) -> bool:
+    def _is_number(value: Any) -> TypeGuard[int | float]:
         """检查值是否为数字"""
-        return (
-                isinstance(value, (int, float))
-                and not isinstance(value, bool) #bool 在 Python 中是 int 的子类
-            )
+        return isinstance(value, (int, float)) and not isinstance(value, bool)

@@ -6,7 +6,7 @@ from app.domain.message import Message, MessageRole
 from app.domain.routing import Route
 from app.prompts.system import SYSTEM_PROMPT
 from app.services.tool_service import ToolService
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from app.graph.state import State, RetrievedDocument, Citation
 from app.rag.retriever import Retriever
 import logging
@@ -72,14 +72,14 @@ def route_request(
 
     try:
         structured_router = router_llm.with_structured_output(RouteDecision)
-        decision = structured_router.invoke(routing_messages)
+        decision = cast(RouteDecision, structured_router.invoke(routing_messages))
     except Exception as exc:
         logger.exception("Automatic request routing failed")
 
-        fallback_route: Route = "rag" if has_collection else "agent"
+        failure_fallback_route: Route = "rag" if has_collection else "agent"
 
         return {
-            "route": fallback_route,
+            "route": failure_fallback_route,
             "route_reason": (
                 "Automatic routing failed; used "
                 f"deterministic fallback "
@@ -208,11 +208,12 @@ def retrieve_documents(
 def grade_documents(state: State, *, min_score: float = 0.5) -> dict[str, Any]:
     """过滤文档"""
     documents = state["retrieved_documents"]
-    filtered_documents = [
-        document
-        for document in documents
-        if document.get("score") is not None and document["score"] >= min_score
-    ]
+    filtered_documents: list[RetrievedDocument] = []
+
+    for document in documents:
+        score = document.get("score")
+        if score is not None and score >= min_score:
+            filtered_documents.append(document)
     return {
         "retrieved_documents": filtered_documents,
         "has_relevant_documents": bool(filtered_documents),

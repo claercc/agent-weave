@@ -9,5 +9,4 @@ def get_openai_client() -> OpenAI:
     """获取OpenAI客户端实例"""
     settings: Settings = get_settings()
     api_key = settings.require_openai_api_key()
-    return OpenAI(api_key=api_key.get_secret_value(),
-                  base_url=settings.openai_api_base)
+    return OpenAI(api_key=api_key.get_secret_value(), base_url=settings.openai_api_base)

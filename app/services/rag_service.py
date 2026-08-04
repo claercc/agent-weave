@@ -37,8 +37,7 @@ class RAGService:
         chunks = self._chunk_service.split_texts(texts)
         # 2. 生成唯一 ID
         ids = [f"doc_{i}_{hash(chunk) % 1000000}" for i, chunk in enumerate(chunks)]
-        metadatas_list = [metadatas for _ in range(len(ids))]
-        print(metadatas_list)
+        metadatas_list = [metadatas or {} for _ in range(len(ids))]
         self._vector_db_service.add_documents(
             documents=chunks,
             ids=ids,

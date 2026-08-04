@@ -42,7 +42,7 @@ class PdfDocumentLoader:
                 extraction_method = "text"
                 if not text:
                     if render_document is None:
-                        render_document = pymupdf.open(
+                        render_document = pymupdf.open(  # type: ignore[no-untyped-call]
                             stream=content,
                             filetype="pdf",
                         )
@@ -67,7 +67,7 @@ class PdfDocumentLoader:
                 )
         finally:
             if render_document is not None:
-                render_document.close()
+                render_document.close()  # type: ignore[no-untyped-call]
 
         if not documents:
             raise ValueError("PDF 中没有识别到可用文字")
@@ -88,7 +88,7 @@ class PdfDocumentLoader:
     ) -> str:
         """将指定 PDF 页面渲染为图片后进行 OCR。"""
         try:
-            page = pdf_document.load_page(page_index)
+            page = pdf_document.load_page(page_index)  # type: ignore[no-untyped-call]
 
             pixmap = page.get_pixmap(
                 dpi=self._ocr_dpi,
