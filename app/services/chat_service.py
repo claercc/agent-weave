@@ -8,7 +8,8 @@ from app.services.conversation_service import ConversationService
 from app.services.tool_service import ToolService
 from typing import cast
 from openai.types.chat import (
-    ChatCompletionToolParam, ChatCompletionMessageFunctionToolCall
+    ChatCompletionToolParam,
+    ChatCompletionMessageFunctionToolCall,
 )
 
 

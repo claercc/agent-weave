@@ -39,7 +39,6 @@ dependencies = [
   "onnxruntime>=1.20.0",
   "numpy>=1.26.0,<3.0",
   "pillow>=10.0.0",
-  "sentence-transformers>=5.6.0,<6.0.0",
   "langgraph>=1.2,<2.0",
 ]
 [project.optional-dependencies]
@@ -49,6 +48,7 @@ dev = [
   "black>=24.0.0",
   "flake8>=7.0.0",
   "mypy>=1.10.0",
+  "pip-tools==7.6.0",
 ]
 
 [project.scripts]
@@ -78,3 +78,12 @@ check_untyped_defs = true
 ignore_missing_imports = true
 follow_imports = "silent"
 exclude = [".venv", "__pycache__"]
+
+[tool.setuptools]
+# 将根目录的 main.py 作为 Python 模块安装，
+# 确保 start = "main:main" 在任意目录都可以找到入口。
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+# 自动安装 app 以及它下面的所有 Python 包。
+include = ["app*"]

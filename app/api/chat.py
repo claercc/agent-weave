@@ -7,10 +7,9 @@ from app.services.tool_service import ToolService, get_tool_service
 from app.services.chat_service import ChatService
 from app.services.conversation_service import ConversationService
 from app.schemas.request import ChatRequest
+from fastapi.responses import StreamingResponse
 
 # stream chat
-from collections.abc import Iterator
-
 router = APIRouter(prefix="/chat", tags=["chat"])
 repository = MemoryConversationRepository()
 
@@ -38,11 +37,14 @@ def chat(
     return {"answer": answer}
 
 
-@router.post("/stream")
+@router.post("/stream", response_class=StreamingResponse)
 def stream_chat(
     request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)
-) -> Iterator[str]:
-    return chat_service.stream_chat(request.session_id, request.message)
+) -> StreamingResponse:
+    return StreamingResponse(
+        chat_service.stream_chat(request.session_id, request.message),
+        media_type="text/event-stream",
+    )
 
 
 @router.post("/tools")

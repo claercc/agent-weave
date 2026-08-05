@@ -53,3 +53,70 @@
 完成标准：我能理解每个方法并能自己抄写
 不需要每次都写得这么完整。也可以直接说：
 跟写模式，继续。一次只动一个文件。
+
+
+阶段一：建立真正全绿、可启动的基线
+修复 main.py 启动入口。
+处理 flake8 和 Black 遗留问题。
+增加统一质量检查命令。
+增加 GitHub Actions：pytest、mypy、flake8、Black。
+生成可复现依赖锁定方案。
+完成 Dockerfile 和 compose。
+验证“克隆仓库 → 配置环境变量 → 一条命令启动”。
+完成标准：陌生人能在 10 分钟内跑起来，所有检查自动全绿。
+阶段二：收敛成一个旗舰 Agent 产品
+以 /api/agent/chat 为唯一核心入口：
+用户请求
+   ↓
+自动路由
+   ├── 普通对话
+   ├── 工具调用
+   └── 知识库检索 → 相关性过滤 → 带引用回答
+旧接口标记为 legacy 或移除。
+增加标准 SSE 流式输出。
+响应增加 route、route_reason、耗时和请求 ID。
+将会话/checkpoint 换成可持久化实现。
+完善统一异常模型和结构化日志。
+为工具和模型调用增加超时、重试与错误分类。
+阶段三：把 RAG 做成可证明的亮点
+统一 embedding 配置和实际向量库实现。
+查询不存在的 collection 时明确返回 404。
+返回页码、文件名、chunk、相关度等引用信息。
+增加上传大小、页数、文件类型限制。
+建立约 20～30 条固定评测问题。
+输出检索命中率、拒答正确率和引用覆盖率。
+用评测结果校准 top_k 和相关度阈值。
+相比继续堆更多工具，这部分更能体现 AI 应用工程能力。
+阶段四：完成求职展示包装
+README 建议包含：
+一句话项目价值。
+30 秒演示 GIF 或截图。
+Mermaid 架构图。
+功能矩阵。
+三分钟快速启动。
+curl/API 示例。
+自动路由、工具调用、RAG 引用示例。
+测试与评测结果。
+技术选型和取舍。
+已知限制及后续路线。
+可访问的在线 Demo 或录屏。
+最终简历描述可以写成：
+基于 FastAPI、LangGraph 和 Chroma 构建 AI Agent 后端，实现 Chat/Tool/RAG 自动路由、PDF/OCR 知识库导入、引用溯源、会话状态管理与 SSE 流式响应；通过严格类型检查、自动化测试、容器化和 RAG 评测保障可维护性与回答可信度。
+
+
+<!-- 常用命令 -->
+<!-- 统一代码排版 -->
+.\.venv\Scripts\python.exe -m black app tests main.py
+python -m black scripts/check.py
+<!-- 发现代码规范问题 -->
+<!-- 未使用的导入。
+没有定义的变量。
+多余空格。
+文件末尾缺少换行。
+行长度超出限制。
+一部分明显的代码错误 -->
+python -m flake8 app tests scripts main.py
+<!-- MyPy：检查类型是否一致 -->
+python -m mypy app scripts main.py
+<!-- pytest：检查业务功能 -->
+python -m pytest -q
