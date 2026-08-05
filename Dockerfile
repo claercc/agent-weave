@@ -25,7 +25,7 @@ RUN useradd \
 
 # 先安装锁定依赖。
 # 只要锁文件没有变化，Docker 就可以复用这一层缓存。
-COPY requirements.lock ./
+COPY requirements-linux.lock ./requirements.lock
 
 RUN python -m pip install \
     --require-hashes \

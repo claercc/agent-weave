@@ -26,14 +26,14 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements-dev.lock
+          cache-dependency-path: requirements-dev-linux.lock
 
       - name: 安装锁定依赖
         run: |
           # 严格按照锁文件及其哈希安装依赖。
           python -m pip install \
             --require-hashes \
-            --requirement requirements-dev.lock
+            --requirement requirements-dev-linux.lock
 
           # 依赖已经安装完毕，只安装当前项目本身。
           python -m pip install \
