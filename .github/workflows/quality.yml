@@ -26,20 +26,25 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements-dev-linux.lock
+          # cache-dependency-path: requirements-dev-linux.lock
+          cache-dependency-path: pyproject.toml
 
-      - name: 安装锁定依赖
+      # - name: 安装锁定依赖
+      #   run: |
+      #     # 严格按照锁文件及其哈希安装依赖。
+      #     python -m pip install \
+      #       --require-hashes \
+      #       --requirement requirements-dev-linux.lock
+
+      #     # 依赖已经安装完毕，只安装当前项目本身。
+      #     python -m pip install \
+      #       --no-deps \
+      #       --no-build-isolation \
+      #       --editable .
+      - name: 安装项目及开发依赖
         run: |
-          # 严格按照锁文件及其哈希安装依赖。
-          python -m pip install \
-            --require-hashes \
-            --requirement requirements-dev-linux.lock
-
-          # 依赖已经安装完毕，只安装当前项目本身。
-          python -m pip install \
-            --no-deps \
-            --no-build-isolation \
-            --editable .
+          # 当前处于快速开发阶段，直接根据 pyproject.toml 解析依赖。
+          python -m pip install --editable ".[dev]"
 
       - name: 执行统一质量检查
         run: python scripts/check.py
