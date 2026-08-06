@@ -31,7 +31,7 @@ def create_agent_workflow(
     retriever: Retriever | None = None,
     router_llm: ChatOpenAI | None = None,
 ) -> Any:
-    """Build and compile the minimal ReAct agent workflow."""
+    """构建并编译最小的ReAct代理工作流"""
     tools = _get_langchain_tools(tool_service)
     builder = StateGraph(State)
     effective_router_llm = router_llm or llm

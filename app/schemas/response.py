@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from app.domain.routing import Route
 
 
 class SummaryResponse(BaseModel):
@@ -31,6 +32,8 @@ class AgentChatResponse(BaseModel):
 
     session_id: str = Field(description="会话ID", min_length=1)
     answer: str = Field(description="Agent 最终回答")
+    route: Route = Field(description="本次请求实际执行的路由")
+    route_reason: str = Field(description="路由选择原因", min_length=1)
     used_tools: list[str] = Field(description="使用的工具", default_factory=list)
     citations: list[CitationResponse] = Field(
         description="引用列表", default_factory=list

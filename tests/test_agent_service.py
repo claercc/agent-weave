@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.services.agent_service import AgentService
 
 
-def test_used_tools_only_contains_tools_from_current_turn():
+def test_used_tools_only_contains_tools_from_current_turn() -> None:
     tool_call_message = AIMessage(
         content="",
         tool_calls=[
@@ -56,7 +56,7 @@ def test_used_tools_only_contains_tools_from_current_turn():
     assert second_response.used_tools == []
 
 
-def test_agent_service_passes_collection_name_to_workflow():
+def test_agent_service_passes_collection_name_to_workflow() -> None:
     workflow = Mock()
     workflow.invoke.return_value = {
         "messages": [
@@ -80,10 +80,11 @@ def test_agent_service_passes_collection_name_to_workflow():
     assert initial_state["messages"][0].content == ("How is the project deployed?")
 
 
-def test_agent_service_returns_rag_citations():
+def test_agent_service_returns_rag_citations() -> None:
     workflow = Mock()
     workflow.invoke.return_value = {
         "route": "rag",
+        "route_reason": "Explicit rag mode was requested.",
         "messages": [
             HumanMessage(content="Which framework is used?"),
             AIMessage(content="The service uses FastAPI [1]."),
@@ -111,3 +112,5 @@ def test_agent_service_returns_rag_citations():
     assert response.citations[0].index == 1
     assert response.citations[0].source == "README.md"
     assert response.citations[0].score == 0.8
+    assert response.route == "rag"
+    assert response.route_reason == "当前工作流未启用路由器，直接执行 Agent。"

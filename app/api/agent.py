@@ -12,6 +12,7 @@ from functools import lru_cache
 from langgraph.checkpoint.memory import InMemorySaver
 from app.rag.retriever import Retriever
 from app.rag.vectordb import VectorDBService
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -57,4 +58,24 @@ def chat_with_agent(
         message=request.message,
         collection_name=request.collection_name,
         mode=request.mode,
+    )
+
+@router.post("/chat/stream", response_class=StreamingResponse)
+def chat_with_agent_stream(
+    request: AgentChatRequest,
+    agent_service: AgentService = Depends(get_agent_service),
+) -> StreamingResponse:
+    return StreamingResponse(
+        agent_service.stream_chat(
+        session_id=request.session_id,
+        message=request.message,
+        collection_name=request.collection_name,
+        mode=request.mode,
+        ),
+        media_type="text/event-stream",
+        # 关闭缓存，确保实时性
+        headers={"Cache-Control": "no-cache",
+        # 告诉客户端和代理服务器不要缓存事件流
+        # 告诉 Nginx 等反向代理不要攒够一批数据再发送，否则看起来会像非流式响应
+                 "X-Accel-Buffering": "no"},
     )
