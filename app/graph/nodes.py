@@ -11,6 +11,7 @@ from app.graph.state import State, RetrievedDocument, Citation
 from app.rag.retriever import Retriever
 import logging
 from app.models.routing import RouteDecision
+from langgraph.types import interrupt
 
 logger = logging.getLogger(__name__)
 
@@ -162,13 +163,113 @@ def agent_node(
     return {"messages": [response]}
 
 
-def route_after_agent(state: State) -> Literal["tools", "end"]:
-    """根据模型响应判断是否需要调用工具或结束流程"""
-    last_message = state["messages"][-1]
-    if isinstance(last_message, AIMessage) and last_message.tool_calls:
-        return "tools"
-    return "end"
+def route_after_agent(
+    state: State,
+    *,
+    tool_service: ToolService,
+) -> Literal["approval", "tools", "end"]:
+    """判断 Agent 应该结束、直接执行工具还是等待人工审批。"""
 
+    last_message = state["messages"][-1]
+
+    if not isinstance(last_message, AIMessage):
+        return "end"
+
+    if not last_message.tool_calls:
+        return "end"
+
+    requires_approval = any(
+        tool_service.requires_approval(tool_call["name"])
+        for tool_call in last_message.tool_calls
+    )
+
+    return "approval" if requires_approval else "tools"
+
+
+def request_tool_approval(state: State) -> dict[str, Any]:
+    """暂停工作流并请求用户审批工具调用。"""
+
+    last_message = state["messages"][-1]
+
+    if not isinstance(last_message, AIMessage):
+        raise ValueError("审批节点需要一条 AIMessage。")
+
+    if not last_message.tool_calls:
+        raise ValueError("审批节点没有找到工具调用。")
+
+    approval_request = {
+        "type": "tool_approval",
+        "tool_calls": [
+            {
+                "id": tool_call.get("id"),
+                "name": tool_call["name"],
+                "arguments": tool_call.get("args", {}),
+            }
+            for tool_call in last_message.tool_calls
+        ],
+    }
+
+    # 首次执行时，这里暂停图并将 approval_request 返回给调用方。
+    # 使用 Command(resume=...) 恢复后，interrupt 会返回用户决定。
+    resume_value = interrupt(approval_request)
+
+    approved = (
+        isinstance(resume_value, dict)
+        and resume_value.get("approved") is True
+    )
+
+    feedback: str | None = None
+
+    if isinstance(resume_value, dict):
+        feedback_value = resume_value.get("feedback")
+
+        if isinstance(feedback_value, str) and feedback_value.strip():
+            feedback = feedback_value.strip()
+
+    approval_decision = {
+        "approved": approved,
+        "feedback": feedback,
+    }
+
+    if approved:
+        return {
+            "approval_decision": approval_decision,
+        }
+
+    rejection_reason = feedback or "用户未批准本次操作。"
+
+    rejection_messages = [
+        ToolMessage(
+            content=f"工具执行已被用户拒绝。原因：{rejection_reason}",
+            name=tool_call["name"],
+            tool_call_id=(
+                tool_call.get("id")
+                or f"rejected-{index}"
+            ),
+        )
+        for index, tool_call in enumerate(
+            last_message.tool_calls,
+            start=1,
+        )
+    ]
+
+    return {
+        "approval_decision": approval_decision,
+        "messages": rejection_messages,
+    }
+
+
+def route_after_approval(
+    state: State,
+) -> Literal["tools", "agent"]:
+    """根据审批结果继续执行工具或返回 Agent。"""
+
+    decision = state.get("approval_decision")
+
+    if decision and decision["approved"]:
+        return "tools"
+
+    return "agent"
 
 def prepare_retrieval_query(state: State) -> dict[str, str]:
     """准备检索查询"""

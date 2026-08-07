@@ -9,11 +9,24 @@ export interface AgentChatRequest {
   mode: AgentMode;
 }
 
+export interface AgentResumeRequest {
+  session_id: string;
+  interrupt_id: string;
+  approved: boolean;
+  feedback?: string;
+}
+
 export interface Citation {
   index: number;
   source: string;
   excerpt: string;
   score: number | null;
+}
+
+export interface ApprovalToolCall {
+  id: string | null;
+  name: string;
+  arguments: Record<string, unknown>;
 }
 
 export interface StartEventData {
@@ -28,7 +41,7 @@ export interface RouteEventData {
 
 export interface TokenEventData {
   content: string;
-  node: string;
+  node?: string;
 }
 
 export interface ToolCallEventData {
@@ -39,6 +52,21 @@ export interface ToolCallEventData {
 export interface ToolResultEventData {
   name: string;
   content: string;
+  executed: boolean;
+}
+
+export interface ApprovalRequiredEventData {
+  type: "tool_approval";
+  session_id: string;
+  interrupt_id: string;
+  tool_calls: ApprovalToolCall[];
+}
+
+export interface ApprovalResolvedEventData {
+  session_id: string;
+  interrupt_id: string;
+  approved: boolean;
+  feedback: string | null;
 }
 
 export interface CitationsEventData {
@@ -59,35 +87,19 @@ export interface ErrorEventData {
 }
 
 export type AgentStreamEvent =
+  | { type: "start"; data: StartEventData }
+  | { type: "route"; data: RouteEventData }
+  | { type: "token"; data: TokenEventData }
+  | { type: "tool_call"; data: ToolCallEventData }
+  | { type: "tool_result"; data: ToolResultEventData }
   | {
-      type: "start";
-      data: StartEventData;
+      type: "approval_required";
+      data: ApprovalRequiredEventData;
     }
   | {
-      type: "route";
-      data: RouteEventData;
+      type: "approval_resolved";
+      data: ApprovalResolvedEventData;
     }
-  | {
-      type: "token";
-      data: TokenEventData;
-    }
-  | {
-      type: "tool_call";
-      data: ToolCallEventData;
-    }
-  | {
-      type: "tool_result";
-      data: ToolResultEventData;
-    }
-  | {
-      type: "citations";
-      data: CitationsEventData;
-    }
-  | {
-      type: "done";
-      data: DoneEventData;
-    }
-  | {
-      type: "error";
-      data: ErrorEventData;
-    };
+  | { type: "citations"; data: CitationsEventData }
+  | { type: "done"; data: DoneEventData }
+  | { type: "error"; data: ErrorEventData };

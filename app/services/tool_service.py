@@ -53,6 +53,13 @@ class ToolService:
         """列出所有工具"""
         return [self._tool_to_dict(tool) for tool in self._tool_registry.list_tools()]
 
+    def requires_approval(self, tool_name: str) -> bool:
+        """检查工具是否需要人工审批"""
+        tool = self._tool_registry.get(tool_name)
+        if not tool:
+            return False
+        return tool.requires_approval
+
     def execute_tool(self, tool_name: str, **kwargs: Any) -> str:
         """执行工具"""
         try:
@@ -104,6 +111,8 @@ def init_tools() -> None:
     """初始化工具"""
     from app.tools.weather import WeatherTool
     from app.tools.calculator import CalculatorTool
+    from app.tools.support_ticket import CreateSupportTicketTool
 
     register_tool(WeatherTool())
     register_tool(CalculatorTool())
+    register_tool(CreateSupportTicketTool())

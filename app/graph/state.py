@@ -20,6 +20,10 @@ class RetrievedDocument(TypedDict):
     metadata: dict[str, Any]
     score: float | None
 
+class ToolApprovalDecision(TypedDict):
+    """用户对工具执行请求的审批结果。"""
+    approved: bool
+    feedback: str | None
 
 class State(MessagesState):
     """代理工作流的共享状态"""
@@ -37,3 +41,4 @@ class State(MessagesState):
     mode: NotRequired[RoutingMode]
     # "route_reason": "Explicit rag mode was requested."
     route_reason: NotRequired[str]
+    approval_decision: NotRequired[ToolApprovalDecision]

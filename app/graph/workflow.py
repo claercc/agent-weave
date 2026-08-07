@@ -17,6 +17,8 @@ from app.graph.nodes import (
     route_after_grading,
     route_request,
     select_request_route,
+    request_tool_approval,
+    route_after_approval,
 )
 from app.graph.state import State
 from app.rag.retriever import Retriever
@@ -72,8 +74,23 @@ def create_agent_workflow(
 
     if tools:
         builder.add_node("tools", ToolNode(tools, handle_tool_errors=True))
+        builder.add_node("approval", request_tool_approval)
         builder.add_conditional_edges(
-            "agent", route_after_agent, {"tools": "tools", "end": END}
+            "agent",
+            partial(route_after_agent,tool_service=tool_service),
+            {
+                "approval": "approval",
+                "tools": "tools",
+                "end": END,
+            }
+        )
+        builder.add_conditional_edges(
+            "approval",
+            route_after_approval,
+            {
+                "tools": "tools",
+                "agent": "agent",
+            }
         )
         builder.add_edge("tools", "agent")
     else:

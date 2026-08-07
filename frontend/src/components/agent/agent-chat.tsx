@@ -12,6 +12,7 @@ import {
   Bot,
   LoaderCircle,
   Send,
+  ShieldAlert,
   Square,
   Trash2,
   User,
@@ -42,6 +43,7 @@ import { cn } from "@/lib/utils";
 import type { AgentMode } from "@/types/agent";
 import { AgentTracePanel } from "@/components/agent/agent-trace-panel";
 import { KnowledgeBaseDialog } from "@/components/agent/knowledge-base-dialog";
+import { ToolApprovalCard } from "@/components/agent/tool-approval-card";
 
 export function AgentChat() {
   const generatedId = useId().replaceAll(":", "");
@@ -54,29 +56,32 @@ export function AgentChat() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
 const {
-    messages,
-    events,
-    route,
-    routeReason,
-    usedTools,
-    citations,
-    error,
-    isStreaming,
-    sendMessage,
-    stopStreaming,
-    clearChat,
-  } = useAgentChat();
+  messages,
+  events,
+  route,
+  routeReason,
+  usedTools,
+  citations,
+  pendingApproval,
+  error,
+  isStreaming,
+  sendMessage,
+  resolveApproval,
+  stopStreaming,
+  clearChat,
+} = useAgentChat();
 
   const canSend =
     input.trim().length > 0 &&
     !isStreaming &&
+    !pendingApproval &&
     (mode !== "rag" || collectionName.trim().length > 0);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: "smooth",
     });
-  }, [messages]);
+  }, [messages, pendingApproval]);
 
   function handleSend() {
     if (!canSend) {
@@ -234,14 +239,31 @@ const {
                             </p>
                             ) : (
                             <div className="flex items-center gap-2 text-muted-foreground">
-                                <LoaderCircle className="size-4 animate-spin" />
-                                Agent 正在思考
+                              {pendingApproval ? (
+                                <>
+                                  <ShieldAlert className="size-4" />
+                                  等待操作授权
+                                </>
+                              ) : (
+                                <>
+                                  <LoaderCircle className="size-4 animate-spin" />
+                                  Agent 正在思考
+                                </>
+                              )}
                             </div>
                             )}
                         </div>
                         </div>
                     ))}
-
+                    {pendingApproval && (
+                      <ToolApprovalCard
+                        approval={pendingApproval}
+                        disabled={isStreaming}
+                        onDecision={(approved, feedback) => {
+                          void resolveApproval(approved, feedback);
+                        }}
+                      />
+                    )}
                     <div ref={messagesEndRef} />
                     </div>
                 </ScrollArea>

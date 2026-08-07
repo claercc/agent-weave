@@ -23,6 +23,11 @@ class BaseTool(ABC):
         """工具参数"""
         pass
 
+    @property
+    def requires_approval(self) -> bool:
+        """工具执行前是否需要人工审批。"""
+        return False
+    
     @abstractmethod
     def run(self, **kwargs: Any) -> Any:
         """执行工具"""

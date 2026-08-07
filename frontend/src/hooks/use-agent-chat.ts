@@ -2,11 +2,15 @@
 
 import { useCallback, useRef, useState } from "react";
 
-import { streamAgentChat } from "@/lib/agent-stream";
+import {
+  resumeAgentChat,
+  streamAgentChat,
+} from "@/lib/agent-stream";
 import type {
   AgentChatRequest,
   AgentRoute,
   AgentStreamEvent,
+  ApprovalRequiredEventData,
   Citation,
 } from "@/types/agent";
 
@@ -17,7 +21,10 @@ export interface ChatMessage {
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
+  return (
+    error instanceof DOMException &&
+    error.name === "AbortError"
+  );
 }
 
 export function useAgentChat() {
@@ -27,10 +34,21 @@ export function useAgentChat() {
   const [routeReason, setRouteReason] = useState("");
   const [usedTools, setUsedTools] = useState<string[]>([]);
   const [citations, setCitations] = useState<Citation[]>([]);
+  const [pendingApproval, setPendingApproval] =
+    useState<ApprovalRequiredEventData | null>(null);
   const [error, setError] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllerRef =
+    useRef<AbortController | null>(null);
+
+  /*
+   * 审批发生后，第一次 SSE 连接会结束。
+   * 因此需要记录当前助手消息 ID，
+   * 恢复执行时继续更新同一个回答气泡。
+   */
+  const activeAssistantMessageIdRef =
+    useRef<string | null>(null);
 
   const updateAssistantMessage = useCallback(
     (
@@ -51,11 +69,90 @@ export function useAgentChat() {
     [],
   );
 
+  const handleStreamEvent = useCallback(
+    (
+      event: AgentStreamEvent,
+      assistantMessageId: string,
+    ) => {
+      if (event.type !== "token") {
+        setEvents((currentEvents) => [
+          ...currentEvents,
+          event,
+        ]);
+      }
+
+      switch (event.type) {
+        case "route":
+          setRoute(event.data.route);
+          setRouteReason(event.data.reason);
+          break;
+
+        case "token":
+          updateAssistantMessage(
+            assistantMessageId,
+            (currentContent) =>
+              currentContent + event.data.content,
+          );
+          break;
+
+        case "tool_result":
+          /*
+           * 只有 executed=true 才说明工具实际执行。
+           * 被拒绝产生的 ToolMessage 不计入已用工具。
+           */
+          if (event.data.executed) {
+            setUsedTools((currentTools) =>
+              currentTools.includes(event.data.name)
+                ? currentTools
+                : [...currentTools, event.data.name],
+            );
+          }
+          break;
+
+        case "approval_required":
+          setPendingApproval(event.data);
+          break;
+
+        case "approval_resolved":
+          setPendingApproval(null);
+          break;
+
+        case "citations":
+          setCitations(event.data.items);
+          break;
+
+        case "done":
+          setRoute(event.data.route);
+          setRouteReason(event.data.route_reason);
+          setUsedTools(event.data.used_tools);
+          setCitations(event.data.citations);
+          setPendingApproval(null);
+
+          updateAssistantMessage(
+            assistantMessageId,
+            () => event.data.answer,
+          );
+
+          activeAssistantMessageIdRef.current = null;
+          break;
+
+        case "error":
+          setError(event.data.message);
+          break;
+      }
+    },
+    [updateAssistantMessage],
+  );
+
   const sendMessage = useCallback(
     async (request: AgentChatRequest) => {
       const content = request.message.trim();
 
-      if (!content || abortControllerRef.current) {
+      if (
+        !content ||
+        abortControllerRef.current ||
+        pendingApproval
+      ) {
         return;
       }
 
@@ -64,6 +161,8 @@ export function useAgentChat() {
       const abortController = new AbortController();
 
       abortControllerRef.current = abortController;
+      activeAssistantMessageIdRef.current =
+        assistantMessageId;
 
       setMessages((currentMessages) => [
         ...currentMessages,
@@ -84,6 +183,7 @@ export function useAgentChat() {
       setRouteReason("");
       setUsedTools([]);
       setCitations([]);
+      setPendingApproval(null);
       setError("");
       setIsStreaming(true);
 
@@ -95,57 +195,11 @@ export function useAgentChat() {
             collection_name:
               request.collection_name?.trim() || undefined,
           },
-          (event) => {
-            if (event.type !== "token") {
-              setEvents((currentEvents) => [
-                ...currentEvents,
-                event,
-              ]);
-            }
-
-            switch (event.type) {
-              case "route":
-                setRoute(event.data.route);
-                setRouteReason(event.data.reason);
-                break;
-
-              case "token":
-                updateAssistantMessage(
-                  assistantMessageId,
-                  (currentContent) =>
-                    currentContent + event.data.content,
-                );
-                break;
-
-              case "tool_call":
-                setUsedTools((currentTools) =>
-                  currentTools.includes(event.data.name)
-                    ? currentTools
-                    : [...currentTools, event.data.name],
-                );
-                break;
-
-              case "citations":
-                setCitations(event.data.items);
-                break;
-
-              case "done":
-                setRoute(event.data.route);
-                setRouteReason(event.data.route_reason);
-                setUsedTools(event.data.used_tools);
-                setCitations(event.data.citations);
-
-                updateAssistantMessage(
-                  assistantMessageId,
-                  () => event.data.answer,
-                );
-                break;
-
-              case "error":
-                setError(event.data.message);
-                break;
-            }
-          },
+          (event) =>
+            handleStreamEvent(
+              event,
+              assistantMessageId,
+            ),
           abortController.signal,
         );
       } catch (requestError) {
@@ -161,7 +215,58 @@ export function useAgentChat() {
         setIsStreaming(false);
       }
     },
-    [updateAssistantMessage],
+    [handleStreamEvent, pendingApproval],
+  );
+
+  const resolveApproval = useCallback(
+    async (approved: boolean, feedback?: string) => {
+      const approval = pendingApproval;
+      const assistantMessageId =
+        activeAssistantMessageIdRef.current;
+
+      if (
+        !approval ||
+        !assistantMessageId ||
+        abortControllerRef.current
+      ) {
+        return;
+      }
+
+      const abortController = new AbortController();
+
+      abortControllerRef.current = abortController;
+      setError("");
+      setIsStreaming(true);
+
+      try {
+        await resumeAgentChat(
+          {
+            session_id: approval.session_id,
+            interrupt_id: approval.interrupt_id,
+            approved,
+            feedback: feedback?.trim() || undefined,
+          },
+          (event) =>
+            handleStreamEvent(
+              event,
+              assistantMessageId,
+            ),
+          abortController.signal,
+        );
+      } catch (requestError) {
+        if (!isAbortError(requestError)) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "恢复 Agent 工作流失败。",
+          );
+        }
+      } finally {
+        abortControllerRef.current = null;
+        setIsStreaming(false);
+      }
+    },
+    [handleStreamEvent, pendingApproval],
   );
 
   const stopStreaming = useCallback(() => {
@@ -173,6 +278,7 @@ export function useAgentChat() {
   const clearChat = useCallback(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    activeAssistantMessageIdRef.current = null;
 
     setMessages([]);
     setEvents([]);
@@ -180,6 +286,7 @@ export function useAgentChat() {
     setRouteReason("");
     setUsedTools([]);
     setCitations([]);
+    setPendingApproval(null);
     setError("");
     setIsStreaming(false);
   }, []);
@@ -191,9 +298,11 @@ export function useAgentChat() {
     routeReason,
     usedTools,
     citations,
+    pendingApproval,
     error,
     isStreaming,
     sendMessage,
+    resolveApproval,
     stopStreaming,
     clearChat,
   };

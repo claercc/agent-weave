@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 
 from app.core.config import Settings, get_settings
 from app.graph.workflow import create_agent_workflow
-from app.schemas.request import AgentChatRequest
+from app.schemas.request import AgentChatRequest, AgentResumeRequest
 from app.schemas.response import AgentChatResponse
 from app.services.agent_service import AgentService
 from app.services.tool_service import ToolService, get_tool_service
@@ -78,4 +78,30 @@ def chat_with_agent_stream(
         # 告诉客户端和代理服务器不要缓存事件流
         # 告诉 Nginx 等反向代理不要攒够一批数据再发送，否则看起来会像非流式响应
                  "X-Accel-Buffering": "no"},
+    )
+
+@router.post(
+    "/chat/resume/stream",
+    response_class=StreamingResponse,
+)
+def resume_agent_stream(
+    request: AgentResumeRequest,
+    agent_service: AgentService = Depends(
+        get_agent_service
+    ),
+) -> StreamingResponse:
+    """根据用户审批结果恢复 Agent 工作流。"""
+
+    return StreamingResponse(
+        agent_service.resume_chat(
+            session_id=request.session_id,
+            interrupt_id=request.interrupt_id,
+            approved=request.approved,
+            feedback=request.feedback,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
