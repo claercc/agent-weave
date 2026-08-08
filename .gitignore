@@ -16,6 +16,7 @@ htmlcov/
 
 # Runtime data
 .chroma_db/
+.chroma_db-before-bge/
 
 # Local configuration
 .env
@@ -26,3 +27,6 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# Local embedding models
+.models/

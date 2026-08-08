@@ -3,107 +3,242 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langchain_openai import ChatOpenAI
 
 from app.domain.message import Message, MessageRole
-from app.domain.routing import Route
+from app.domain.routing import (
+    Route,
+    RoutingMode,
+)
 from app.prompts.system import SYSTEM_PROMPT
 from app.services.tool_service import ToolService
 from typing import Any, Literal, cast
 from app.graph.state import State, RetrievedDocument, Citation
 from app.rag.retriever import Retriever
 import logging
-from app.models.routing import RouteDecision
+from app.models.routing import RequestAnalysis
+from app.prompts.routing import REQUEST_ANALYSIS_PROMPT
 from langgraph.types import interrupt
 
 logger = logging.getLogger(__name__)
 
 
 def route_request(
-    state: State, *, router_llm: ChatOpenAI | None = None
-) -> dict[str, str]:
-    """根据请求路由到正确的节点"""
-    mode = state.get("mode", "auto")
-    collection_name = state.get("collection_name")
-    if mode == "chat":
-        return {"route": "chat", "route_reason": "Explicit chat mode was requested."}
-    if mode == "agent":
-        return {"route": "agent", "route_reason": "Explicit agent mode was requested."}
-    if mode == "rag":
-        if not collection_name or not collection_name.strip():
-            raise ValueError("RAG 模式下必须指定索引集合名称")
-        return {"route": "rag", "route_reason": "Explicit rag mode was requested."}
+    state: State,
+    *,
+    router_llm: ChatOpenAI | None = None,
+) -> dict[str, Any]:
+    """分析请求意图并生成结构化工作流决策。"""
 
-    if not router_llm:
-        fallback_route = (
-            "rag" if collection_name and collection_name.strip() else "agent"
+    mode: RoutingMode = state.get(
+        "mode",
+        "auto",
+    )
+
+    collection_name = state.get(
+        "collection_name"
+    )
+
+    has_collection = bool(
+        collection_name
+        and collection_name.strip()
+    )
+
+    if mode == "rag" and not has_collection:
+        raise ValueError(
+            "RAG 模式下必须指定知识库名称"
         )
-        return {
-            "route": fallback_route,
-            "route_reason": (
-                "No routing model was configured; " "used deterministic fallback."
-            ),
-        }
-    user_message = _get_latest_user_text(state)
-    has_collection = bool(collection_name and collection_name.strip())
 
-    routing_messages = [
+    conversation = _format_recent_conversation(
+        state
+    )
+
+    if router_llm is None:
+        return _build_fallback_analysis(
+            state=state,
+            mode=mode,
+            has_collection=has_collection,
+        )
+
+    analysis_messages = [
         SystemMessage(
-            content=(
-                "You route requests for an enterprise AI "
-                "assistant.\n"
-                "Choose exactly one route:\n"
-                "- chat: greetings, thanks, or ordinary "
-                "conversation that needs no tools or "
-                "private documents.\n"
-                "- rag: questions about private or project "
-                "documents. Only choose rag when a knowledge "
-                "base collection is available.\n"
-                "- agent: requests requiring tools, external "
-                "information, calculations, weather, time, "
-                "or actions.\n"
-                "Return a short reason."
-            )
+            content=REQUEST_ANALYSIS_PROMPT
         ),
         HumanMessage(
             content=(
-                f"Knowledge base available: "
-                f"{has_collection}\n"
-                f"User message: {user_message}"
+                f"用户指定模式：{mode}\n"
+                f"是否存在可用知识库："
+                f"{has_collection}\n\n"
+                f"最近会话：\n{conversation}"
             )
         ),
     ]
 
     try:
-        structured_router = router_llm.with_structured_output(RouteDecision)
-        decision = cast(RouteDecision, structured_router.invoke(routing_messages))
+        structured_router = (
+            router_llm.with_structured_output(
+                RequestAnalysis,
+                method="json_mode",
+            )
+        )
+
+        analysis = cast(
+            RequestAnalysis,
+            structured_router.invoke(
+                analysis_messages
+            ),
+        )
     except Exception as exc:
-        logger.exception("Automatic request routing failed")
+        logger.exception(
+            "结构化请求分析失败"
+        )
 
-        failure_fallback_route: Route = "rag" if has_collection else "agent"
+        return _build_fallback_analysis(
+            state=state,
+            mode=mode,
+            has_collection=has_collection,
+            failure=exc,
+        )
 
-        return {
-            "route": failure_fallback_route,
-            "route_reason": (
-                "Automatic routing failed; used "
-                f"deterministic fallback "
-                f"({type(exc).__name__})."
-            ),
-        }
+    route = analysis.route
+    reason = analysis.reason
 
-    # 即使模型违反提示，也不能在没有知识库时进入 RAG。
-    if decision.route == "rag" and not has_collection:
-        return {
-            "route": "chat",
-            "route_reason": (
-                "The routing model selected RAG without "
-                "an available collection; downgraded to chat."
-            ),
-        }
+    # 显式模式拥有最高优先级，
+    # 但仍然保留模型产生的意图分析。
+    if mode != "auto":
+        route = mode
+        reason = (
+            f"用户显式选择 {mode} 模式；"
+            f"{analysis.reason}"
+        )
+
+    requires_clarification = (
+        analysis.requires_clarification
+    )
+
+    clarification_question = (
+        analysis.clarification_question
+    )
+
+    rewritten_query = analysis.rewritten_query
+
+    # 自动模式下，如果模型选择 RAG，
+    # 但前端没有选择知识库，则先要求用户补充。
+    if route == "rag" and not has_collection:
+        route = "chat"
+        requires_clarification = True
+        clarification_question = (
+            "这个问题需要查询私有知识库，"
+            "请先选择一个知识库后再继续。"
+        )
+        reason = (
+            "识别为知识库查询，但当前没有可用知识库。"
+        )
+
+    if (
+        requires_clarification
+        and not clarification_question
+    ):
+        clarification_question = (
+            "为了继续完成这个任务，"
+            "请补充必要的信息。"
+        )
+
+    # 如果知识问题没有产生改写结果，
+    # 至少使用用户最新问题作为检索语句。
+    if (
+        analysis.intent == "knowledge_query"
+        and not rewritten_query
+    ):
+        rewritten_query = (
+            _get_latest_user_text(state)
+        )
 
     return {
-        "route": decision.route,
-        "route_reason": decision.reason,
+        "intent": analysis.intent,
+        "route": route,
+        "route_reason": reason,
+        "needs_knowledge": (
+            analysis.needs_knowledge
+        ),
+        "needs_tools": analysis.needs_tools,
+        "requires_clarification": (
+            requires_clarification
+        ),
+        "clarification_question": (
+            clarification_question
+        ),
+        "rewritten_query": rewritten_query,
     }
 
+def _build_fallback_analysis(
+    state: State,
+    mode: RoutingMode,
+    has_collection: bool,
+    failure: Exception | None = None,
+) -> dict[str, Any]:
+    """模型分析失败时生成确定性的安全决策。"""
 
+    if mode != "auto":
+        route =  mode
+    elif has_collection:
+        route = "rag"
+    else:
+        route = "agent"
+
+    latest_user_text = _get_latest_user_text(
+        state
+    )
+
+    if route == "rag":
+        intent = "knowledge_query"
+    elif route == "agent":
+        intent = "information_tool"
+    else:
+        intent = "conversation"
+
+    failure_suffix = (
+        f"（{type(failure).__name__}）"
+        if failure
+        else ""
+    )
+
+    return {
+        "intent": intent,
+        "route": route,
+        "route_reason": (
+            "请求分析模型不可用，"
+            f"使用确定性兜底路由到 {route}"
+            f"{failure_suffix}。"
+        ),
+        "needs_knowledge": route == "rag",
+        "needs_tools": route == "agent",
+        "requires_clarification": False,
+        "clarification_question": None,
+        "rewritten_query": (
+            latest_user_text
+            if route == "rag"
+            else None
+        ),
+    }
+
+def clarify_request(
+    state: State,
+) -> dict[str, list[AIMessage]]:
+    """向用户询问完成任务所缺少的信息。"""
+
+    question = state.get(
+        "clarification_question"
+    )
+
+    if not question:
+        question = (
+            "为了继续完成这个任务，"
+            "请补充必要的信息。"
+        )
+
+    return {
+        "messages": [
+            AIMessage(content=question)
+        ]
+    }
 def _convert_to_langchain_messages(messages: list[Message]) -> list[Any]:
     """将传统领域消息转换为LangChain消息"""
     langchain_messages: list[Any] = [SystemMessage(content=SYSTEM_PROMPT)]
@@ -271,9 +406,30 @@ def route_after_approval(
 
     return "agent"
 
-def prepare_retrieval_query(state: State) -> dict[str, str]:
-    """准备检索查询"""
-    return {"retrieval_query": _get_latest_user_text(state)}
+def prepare_retrieval_query(
+    state: State,
+) -> dict[str, str]:
+    """优先使用 Router 改写后的独立检索问题。"""
+
+    rewritten_query = state.get(
+        "rewritten_query"
+    )
+
+    if (
+        isinstance(rewritten_query, str)
+        and rewritten_query.strip()
+    ):
+        retrieval_query = (
+            rewritten_query.strip()
+        )
+    else:
+        retrieval_query = (
+            _get_latest_user_text(state)
+        )
+
+    return {
+        "retrieval_query": retrieval_query
+    }
 
 
 def retrieve_documents(
@@ -293,7 +449,17 @@ def retrieve_documents(
     documents: list[RetrievedDocument] = []
     for result in results:
         distance = result.get("distance")
-        score = None if distance is None else 1.0 / (1.0 + float(distance))
+        score = (
+            None
+            if distance is None
+            else max(
+                0.0,
+                min(
+                    1.0,
+                    1.0 - float(distance),
+                ),
+            )
+        )
         metadata = result.get("metadata") or result.get("metadatas") or {}
         documents.append(
             {
@@ -329,17 +495,34 @@ def route_after_grading(state: State) -> Literal["generate", "fallback"]:
 
 
 # 增加 RAG 生成和兜底节点
-def select_request_route(state: State) -> Route:
-    """根据是否有集合名称判断是否需要使用 RAG 或模型"""
-    route = state.get("route")
-    if route == "rag":
-        return "rag"
-    if route == "agent":
-        return "agent"
-    if route == "chat":
-        return "chat"
-    raise ValueError("Invalid route selection.")
+def select_request_route(
+    state: State,
+) -> Literal[
+    "clarify",
+    "chat",
+    "rag",
+    "agent",
+]:
+    """选择澄清、聊天、知识库或工具工作流。"""
 
+    if state.get(
+        "requires_clarification",
+        False,
+    ):
+        return "clarify"
+
+    route = state.get("route")
+
+    if route in {
+        "chat",
+        "rag",
+        "agent",
+    }:
+        return route
+
+    raise ValueError(
+        "请求分析没有产生有效路由"
+    )
 
 # 格式化检索文档
 def _format_retrieved_documents(documents: list[RetrievedDocument]) -> str:
@@ -402,6 +585,34 @@ def _build_citations(documents: list[RetrievedDocument]) -> list[Citation]:
         )
     return citations
 
+def _format_recent_conversation(
+    state: State,
+    limit: int = 6,
+) -> str:
+    """把最近几条消息转换为 Router 可读文本。"""
+
+    formatted_messages: list[str] = []
+
+    for message in state["messages"][-limit:]:
+        if isinstance(message, HumanMessage):
+            role = "用户"
+        elif isinstance(message, AIMessage):
+            role = "助手"
+        elif isinstance(message, ToolMessage):
+            role = "工具"
+        else:
+            role = "未知"
+
+        content = message.content
+
+        if not isinstance(content, str):
+            content = str(content)
+
+        formatted_messages.append(
+            f"{role}：{content}"
+        )
+
+    return "\n".join(formatted_messages)
 
 def _get_latest_user_text(state: State) -> str:
     """获取最新的用户消息"""

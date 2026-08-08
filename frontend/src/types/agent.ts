@@ -2,6 +2,12 @@ export type AgentMode = "auto" | "chat" | "rag" | "agent";
 
 export type AgentRoute = "chat" | "rag" | "agent";
 
+export type RequestIntent =
+  | "conversation"
+  | "knowledge_query"
+  | "information_tool"
+  | "action";
+
 export interface AgentChatRequest {
   session_id: string;
   message: string;
@@ -23,6 +29,25 @@ export interface Citation {
   score: number | null;
 }
 
+export interface RetrievalCandidate {
+  source: string;
+  page: number | string | null;
+  score: number | null;
+}
+
+export interface RetrievalEventData {
+  query: string;
+  count: number;
+  candidates: RetrievalCandidate[];
+}
+
+export interface RetrievalGradedEventData {
+  input_count: number;
+  kept_count: number;
+  discarded_count: number;
+  has_relevant_documents: boolean;
+}
+
 export interface ApprovalToolCall {
   id: string | null;
   name: string;
@@ -32,6 +57,17 @@ export interface ApprovalToolCall {
 export interface StartEventData {
   session_id: string;
   requested_mode: AgentMode;
+}
+
+export interface RequestAnalysisEventData {
+  intent: RequestIntent;
+  route: AgentRoute;
+  needs_knowledge: boolean;
+  needs_tools: boolean;
+  requires_clarification: boolean;
+  rewritten_query: string | null;
+  clarification_question: string | null;
+  reason: string;
 }
 
 export interface RouteEventData {
@@ -88,7 +124,19 @@ export interface ErrorEventData {
 
 export type AgentStreamEvent =
   | { type: "start"; data: StartEventData }
+  | {
+      type: "analysis";
+      data: RequestAnalysisEventData;
+    }
   | { type: "route"; data: RouteEventData }
+  | {
+      type: "retrieval";
+      data: RetrievalEventData;
+    }
+  | {
+      type: "retrieval_graded";
+      data: RetrievalGradedEventData;
+    }
   | { type: "token"; data: TokenEventData }
   | { type: "tool_call"; data: ToolCallEventData }
   | { type: "tool_result"; data: ToolResultEventData }

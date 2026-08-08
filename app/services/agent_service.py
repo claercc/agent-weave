@@ -154,7 +154,7 @@ class AgentService:
             "feedback": normalized_feedback,
         }
 
-        command = Command(
+        command: Command[str] = Command(
             resume={
                 interrupt_id: resume_value,
             }
@@ -183,6 +183,9 @@ class AgentService:
         final_answer = ""
         was_interrupted = False
 
+        retrieval_query: str | None = None
+        retrieved_candidate_count = 0
+
         try:
             stream = self._workflow.stream(
                 input_value,
@@ -200,6 +203,7 @@ class AgentService:
                         "chat",
                         "agent",
                         "generate",
+                        "clarify",
                     }:
                         continue
 
@@ -265,11 +269,142 @@ class AgentService:
                             route_reason,
                         )
 
+                        # 先发送完整请求分析，
+                        # 再发送最终选择的工作流路由。
+                        yield encode_sse(
+                            "analysis",
+                            {
+                                "intent": update.get(
+                                    "intent",
+                                    "conversation",
+                                ),
+                                "route": route,
+                                "needs_knowledge": update.get(
+                                    "needs_knowledge",
+                                    False,
+                                ),
+                                "needs_tools": update.get(
+                                    "needs_tools",
+                                    False,
+                                ),
+                                "requires_clarification": (
+                                    update.get(
+                                        "requires_clarification",
+                                        False,
+                                    )
+                                ),
+                                "rewritten_query": update.get(
+                                    "rewritten_query"
+                                ),
+                                "clarification_question": (
+                                    update.get(
+                                        "clarification_question"
+                                    )
+                                ),
+                                "reason": route_reason,
+                            },
+                        )
+
                         yield encode_sse(
                             "route",
                             {
                                 "route": route,
                                 "reason": route_reason,
+                            },
+                        )
+
+                    if node_name == "prepare_retrieval_query":
+                        query_value = update.get(
+                            "retrieval_query"
+                        )
+
+                        if isinstance(query_value, str):
+                            retrieval_query = query_value
+
+                    if node_name == "retrieve":
+                        retrieved_documents = update.get(
+                            "retrieved_documents",
+                            [],
+                        )
+
+                        if not isinstance(
+                            retrieved_documents,
+                            list,
+                        ):
+                            retrieved_documents = []
+
+                        retrieved_candidate_count = len(
+                            retrieved_documents
+                        )
+
+                        candidates: list[dict[str, Any]] = []
+
+                        for document in retrieved_documents:
+                            if not isinstance(document, dict):
+                                continue
+
+                            metadata = document.get(
+                                "metadata",
+                                {},
+                            )
+
+                            if not isinstance(metadata, dict):
+                                metadata = {}
+
+                            candidates.append(
+                                {
+                                    "source": str(
+                                        metadata.get(
+                                            "source",
+                                            "unknown",
+                                        )
+                                    ),
+                                    "page": metadata.get("page"),
+                                    "score": document.get("score"),
+                                }
+                            )
+
+                        yield encode_sse(
+                            "retrieval",
+                            {
+                                "query": retrieval_query or "",
+                                "count": retrieved_candidate_count,
+                                "candidates": candidates,
+                            },
+                        )
+
+                    if node_name == "grade":
+                        filtered_documents = update.get(
+                            "retrieved_documents",
+                            [],
+                        )
+
+                        if not isinstance(
+                            filtered_documents,
+                            list,
+                        ):
+                            filtered_documents = []
+
+                        kept_count = len(filtered_documents)
+
+                        yield encode_sse(
+                            "retrieval_graded",
+                            {
+                                "input_count": (
+                                    retrieved_candidate_count
+                                ),
+                                "kept_count": kept_count,
+                                "discarded_count": max(
+                                    0,
+                                    retrieved_candidate_count
+                                    - kept_count,
+                                ),
+                                "has_relevant_documents": (
+                                    update.get(
+                                        "has_relevant_documents",
+                                        False,
+                                    )
+                                ),
                             },
                         )
 

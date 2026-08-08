@@ -8,7 +8,10 @@ import type {
 
 const AGENT_EVENT_TYPES = new Set<AgentStreamEvent["type"]>([
   "start",
+  "analysis",
   "route",
+  "retrieval",
+  "retrieval_graded",
   "token",
   "tool_call",
   "tool_result",

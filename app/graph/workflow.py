@@ -19,6 +19,7 @@ from app.graph.nodes import (
     select_request_route,
     request_tool_approval,
     route_after_approval,
+    clarify_request,
 )
 from app.graph.state import State
 from app.rag.retriever import Retriever
@@ -48,6 +49,7 @@ def create_agent_workflow(
                 router_llm=effective_router_llm,
             ),
         )
+        builder.add_node("clarify", clarify_request)
         builder.add_node("prepare_retrieval_query", prepare_retrieval_query)
         builder.add_node("retrieve", partial(retrieve_documents, retriever=retriever))
         builder.add_node("grade", partial(grade_documents, min_score=0.4))
@@ -59,8 +61,13 @@ def create_agent_workflow(
         builder.add_conditional_edges(
             "router",
             select_request_route,
-            {"chat": "chat", "rag": "prepare_retrieval_query", "agent": "agent"},
+            {
+                "clarify": "clarify",
+                "chat": "chat",
+                "rag": "prepare_retrieval_query",
+                "agent": "agent"},
         )
+        builder.add_edge("clarify", END)
         builder.add_edge("prepare_retrieval_query", "retrieve")
         builder.add_edge("retrieve", "grade")
         builder.add_conditional_edges(

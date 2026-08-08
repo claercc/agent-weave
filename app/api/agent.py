@@ -3,6 +3,7 @@ from langchain_openai import ChatOpenAI
 
 from app.core.config import Settings, get_settings
 from app.graph.workflow import create_agent_workflow
+from app.rag.embedding import EmbeddingService
 from app.schemas.request import AgentChatRequest, AgentResumeRequest
 from app.schemas.response import AgentChatResponse
 from app.services.agent_service import AgentService
@@ -19,8 +20,10 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 @lru_cache()
 def get_agent_retriever() -> Retriever:
+    settings = get_settings()
     vector_db_service = VectorDBService()
-    return Retriever(vector_db_service)
+    embedding_service = EmbeddingService(settings)
+    return Retriever(vector_db_service, embedding_service)
 
 
 @lru_cache()

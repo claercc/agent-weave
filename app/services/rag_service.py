@@ -16,9 +16,9 @@ class RAGService:
         self._client = client
         self._settings = settings
         self._chunk_service = ChunkService()
-        self._embedding_service = EmbeddingService(client, settings)
+        self._embedding_service = EmbeddingService(settings)
         self._vector_db_service = VectorDBService()
-        self._retriever = Retriever(self._vector_db_service)
+        self._retriever = Retriever(self._vector_db_service, self._embedding_service)
         self._pdf_loader = PdfDocumentLoader()
 
     def ingest_documents(
@@ -35,6 +35,7 @@ class RAGService:
         """
         # 1. 切分文档
         chunks = self._chunk_service.split_texts(texts)
+        embeddings = self._embedding_service.embed_documents(chunks)
         # 2. 生成唯一 ID
         ids = [f"doc_{i}_{hash(chunk) % 1000000}" for i, chunk in enumerate(chunks)]
         metadatas_list = [metadatas or {} for _ in range(len(ids))]
@@ -42,7 +43,9 @@ class RAGService:
             documents=chunks,
             ids=ids,
             collection_name=collection_name,
+            embedding_model=self._embedding_service.model_name,
             metadatas=metadatas_list,
+            embeddings=embeddings,
         )
 
     def retrieve_context(self, query: str, collection_name: str, top_k: int = 4) -> str:
@@ -124,6 +127,11 @@ class RAGService:
             filename=filename,
         )
         chunks = self._chunk_service.split_documents(source_documents)
+        chunk_texts = [
+            chunk.page_content
+            for chunk in chunks
+        ]
+        embeddings = self._embedding_service.embed_documents(chunk_texts)
         ids = [
             self._build_chunk_id(
                 collection_name=collection_name,
@@ -136,6 +144,8 @@ class RAGService:
             ids=ids,
             collection_name=collection_name,
             metadatas=[chunk.metadata for chunk in chunks],
+            embeddings=embeddings,
+            embedding_model=self._embedding_service.model_name,
         )
         return len(chunks)
 
