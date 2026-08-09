@@ -23,15 +23,11 @@ class Retriever:
     ) -> list[dict[str, Any]]:
         """生成查询向量并检索相关文档。"""
 
-        query_embedding = (
-            self._embedding_service.embed_query(query)
-        )
+        query_embedding = self._embedding_service.embed_query(query)
 
         return self._vectordb_service.search(
             query_embedding=query_embedding,
-            embedding_model=(
-                self._embedding_service.model_name
-            ),
+            embedding_model=(self._embedding_service.model_name),
             n_results=top_k,
             collection_name=collection_name,
         )
@@ -56,9 +52,6 @@ class Retriever:
             results,
             start=1,
         ):
-            context_parts.append(
-                f"【文档{index}】\n"
-                f"{result['document']}\n"
-            )
+            context_parts.append(f"【文档{index}】\n" f"{result['document']}\n")
 
         return "\n".join(context_parts)

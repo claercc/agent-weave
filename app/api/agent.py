@@ -63,6 +63,7 @@ def chat_with_agent(
         mode=request.mode,
     )
 
+
 @router.post("/chat/stream", response_class=StreamingResponse)
 def chat_with_agent_stream(
     request: AgentChatRequest,
@@ -70,18 +71,21 @@ def chat_with_agent_stream(
 ) -> StreamingResponse:
     return StreamingResponse(
         agent_service.stream_chat(
-        session_id=request.session_id,
-        message=request.message,
-        collection_name=request.collection_name,
-        mode=request.mode,
+            session_id=request.session_id,
+            message=request.message,
+            collection_name=request.collection_name,
+            mode=request.mode,
         ),
         media_type="text/event-stream",
         # 关闭缓存，确保实时性
-        headers={"Cache-Control": "no-cache",
-        # 告诉客户端和代理服务器不要缓存事件流
-        # 告诉 Nginx 等反向代理不要攒够一批数据再发送，否则看起来会像非流式响应
-                 "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            # 告诉客户端和代理服务器不要缓存事件流
+            # 告诉 Nginx 等反向代理不要攒够一批数据再发送，否则看起来会像非流式响应
+            "X-Accel-Buffering": "no",
+        },
     )
+
 
 @router.post(
     "/chat/resume/stream",
@@ -89,9 +93,7 @@ def chat_with_agent_stream(
 )
 def resume_agent_stream(
     request: AgentResumeRequest,
-    agent_service: AgentService = Depends(
-        get_agent_service
-    ),
+    agent_service: AgentService = Depends(get_agent_service),
 ) -> StreamingResponse:
     """根据用户审批结果恢复 Agent 工作流。"""
 

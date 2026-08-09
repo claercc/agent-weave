@@ -64,10 +64,7 @@ class CreateSupportTicketTool(BaseTool):
         if not isinstance(title, str) or not title.strip():
             raise ValueError("工单标题不能为空")
 
-        if (
-            not isinstance(description, str)
-            or not description.strip()
-        ):
+        if not isinstance(description, str) or not description.strip():
             raise ValueError("工单描述不能为空")
 
         if priority not in {"low", "medium", "high"}:

@@ -38,19 +38,11 @@ class AgentService:
         )
 
         messages = result["messages"]
-        current_turn_messages = self._get_current_turn_messages(
-            messages
-        )
+        current_turn_messages = self._get_current_turn_messages(messages)
 
         answer = self._find_final_answer(current_turn_messages)
-        used_tools = self._find_requested_tools(
-            current_turn_messages
-        )
-        citations = (
-            result.get("citations", [])
-            if result.get("route") == "rag"
-            else []
-        )
+        used_tools = self._find_requested_tools(current_turn_messages)
+        citations = result.get("citations", []) if result.get("route") == "rag" else []
 
         return AgentChatResponse(
             session_id=session_id,
@@ -90,9 +82,7 @@ class AgentService:
             ),
             session_id=session_id,
             route="agent",
-            route_reason=(
-                "当前工作流未启用路由器，直接执行 Agent。"
-            ),
+            route_reason=("当前工作流未启用路由器，直接执行 Agent。"),
             used_tools=[],
             citations=[],
         )
@@ -117,26 +107,16 @@ class AgentService:
         )
 
         messages = values.get("messages", [])
-        current_turn_messages = self._get_current_turn_messages(
-            messages
-        )
+        current_turn_messages = self._get_current_turn_messages(messages)
 
         # 这里只统计已经产生 ToolMessage 的工具，
         # 避免把“提出调用但被拒绝”的工具算成已执行。
-        used_tools = self._find_executed_tools(
-            current_turn_messages
-        )
+        used_tools = self._find_executed_tools(current_turn_messages)
 
-        citations = (
-            values.get("citations", [])
-            if route == "rag"
-            else []
-        )
+        citations = values.get("citations", []) if route == "rag" else []
 
         normalized_feedback = (
-            feedback.strip()
-            if isinstance(feedback, str) and feedback.strip()
-            else None
+            feedback.strip() if isinstance(feedback, str) and feedback.strip() else None
         )
 
         yield encode_sse(
@@ -224,10 +204,7 @@ class AgentService:
                             },
                         )
 
-                if (
-                    stream_mode != "updates"
-                    or not isinstance(chunk, dict)
-                ):
+                if stream_mode != "updates" or not isinstance(chunk, dict):
                     continue
 
                 for node_name, update in chunk.items():
@@ -251,9 +228,7 @@ class AgentService:
                                 {
                                     **value,
                                     "session_id": session_id,
-                                    "interrupt_id": (
-                                        interrupt_info.id
-                                    ),
+                                    "interrupt_id": (interrupt_info.id),
                                 },
                             )
 
@@ -293,13 +268,9 @@ class AgentService:
                                         False,
                                     )
                                 ),
-                                "rewritten_query": update.get(
-                                    "rewritten_query"
-                                ),
+                                "rewritten_query": update.get("rewritten_query"),
                                 "clarification_question": (
-                                    update.get(
-                                        "clarification_question"
-                                    )
+                                    update.get("clarification_question")
                                 ),
                                 "reason": route_reason,
                             },
@@ -314,9 +285,7 @@ class AgentService:
                         )
 
                     if node_name == "prepare_retrieval_query":
-                        query_value = update.get(
-                            "retrieval_query"
-                        )
+                        query_value = update.get("retrieval_query")
 
                         if isinstance(query_value, str):
                             retrieval_query = query_value
@@ -333,9 +302,7 @@ class AgentService:
                         ):
                             retrieved_documents = []
 
-                        retrieved_candidate_count = len(
-                            retrieved_documents
-                        )
+                        retrieved_candidate_count = len(retrieved_documents)
 
                         candidates: list[dict[str, Any]] = []
 
@@ -390,14 +357,11 @@ class AgentService:
                         yield encode_sse(
                             "retrieval_graded",
                             {
-                                "input_count": (
-                                    retrieved_candidate_count
-                                ),
+                                "input_count": (retrieved_candidate_count),
                                 "kept_count": kept_count,
                                 "discarded_count": max(
                                     0,
-                                    retrieved_candidate_count
-                                    - kept_count,
+                                    retrieved_candidate_count - kept_count,
                                 ),
                                 "has_relevant_documents": (
                                     update.get(
@@ -419,15 +383,11 @@ class AgentService:
                             AIMessage,
                         ):
                             if graph_message.tool_calls:
-                                for tool_call in (
-                                    graph_message.tool_calls
-                                ):
+                                for tool_call in graph_message.tool_calls:
                                     yield encode_sse(
                                         "tool_call",
                                         {
-                                            "name": tool_call[
-                                                "name"
-                                            ],
+                                            "name": tool_call["name"],
                                             "arguments": (
                                                 tool_call.get(
                                                     "args",
@@ -437,10 +397,8 @@ class AgentService:
                                         },
                                     )
                             else:
-                                answer = (
-                                    self._message_content_to_text(
-                                        graph_message.content
-                                    )
+                                answer = self._message_content_to_text(
+                                    graph_message.content
                                 )
 
                                 if answer:
@@ -450,19 +408,12 @@ class AgentService:
                             graph_message,
                             ToolMessage,
                         ):
-                            tool_name = (
-                                graph_message.name
-                                or "unknown"
-                            )
+                            tool_name = graph_message.name or "unknown"
 
                             # 只有 ToolNode 的 ToolMessage 才代表
                             # 工具确实执行过。审批拒绝产生的
                             # ToolMessage 不计入 used_tools。
-                            if (
-                                node_name == "tools"
-                                and tool_name
-                                not in used_tools
-                            ):
+                            if node_name == "tools" and tool_name not in used_tools:
                                 used_tools.append(tool_name)
 
                             yield encode_sse(
@@ -474,9 +425,7 @@ class AgentService:
                                             graph_message.content
                                         )
                                     ),
-                                    "executed": (
-                                        node_name == "tools"
-                                    ),
+                                    "executed": (node_name == "tools"),
                                 },
                             )
 
@@ -551,13 +500,8 @@ class AgentService:
         messages: list[Any],
     ) -> str:
         for message in reversed(messages):
-            if (
-                isinstance(message, AIMessage)
-                and not message.tool_calls
-            ):
-                return AgentService._message_content_to_text(
-                    message.content
-                )
+            if isinstance(message, AIMessage) and not message.tool_calls:
+                return AgentService._message_content_to_text(message.content)
 
         return ""
 

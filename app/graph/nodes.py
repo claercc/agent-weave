@@ -32,23 +32,14 @@ def route_request(
         "auto",
     )
 
-    collection_name = state.get(
-        "collection_name"
-    )
+    collection_name = state.get("collection_name")
 
-    has_collection = bool(
-        collection_name
-        and collection_name.strip()
-    )
+    has_collection = bool(collection_name and collection_name.strip())
 
     if mode == "rag" and not has_collection:
-        raise ValueError(
-            "RAG 模式下必须指定知识库名称"
-        )
+        raise ValueError("RAG 模式下必须指定知识库名称")
 
-    conversation = _format_recent_conversation(
-        state
-    )
+    conversation = _format_recent_conversation(state)
 
     if router_llm is None:
         return _build_fallback_analysis(
@@ -58,9 +49,7 @@ def route_request(
         )
 
     analysis_messages = [
-        SystemMessage(
-            content=REQUEST_ANALYSIS_PROMPT
-        ),
+        SystemMessage(content=REQUEST_ANALYSIS_PROMPT),
         HumanMessage(
             content=(
                 f"用户指定模式：{mode}\n"
@@ -72,23 +61,17 @@ def route_request(
     ]
 
     try:
-        structured_router = (
-            router_llm.with_structured_output(
-                RequestAnalysis,
-                method="json_mode",
-            )
+        structured_router = router_llm.with_structured_output(
+            RequestAnalysis,
+            method="json_mode",
         )
 
         analysis = cast(
             RequestAnalysis,
-            structured_router.invoke(
-                analysis_messages
-            ),
+            structured_router.invoke(analysis_messages),
         )
     except Exception as exc:
-        logger.exception(
-            "结构化请求分析失败"
-        )
+        logger.exception("结构化请求分析失败")
 
         return _build_fallback_analysis(
             state=state,
@@ -104,18 +87,11 @@ def route_request(
     # 但仍然保留模型产生的意图分析。
     if mode != "auto":
         route = mode
-        reason = (
-            f"用户显式选择 {mode} 模式；"
-            f"{analysis.reason}"
-        )
+        reason = f"用户显式选择 {mode} 模式；" f"{analysis.reason}"
 
-    requires_clarification = (
-        analysis.requires_clarification
-    )
+    requires_clarification = analysis.requires_clarification
 
-    clarification_question = (
-        analysis.clarification_question
-    )
+    clarification_question = analysis.clarification_question
 
     rewritten_query = analysis.rewritten_query
 
@@ -125,48 +101,29 @@ def route_request(
         route = "chat"
         requires_clarification = True
         clarification_question = (
-            "这个问题需要查询私有知识库，"
-            "请先选择一个知识库后再继续。"
+            "这个问题需要查询私有知识库，" "请先选择一个知识库后再继续。"
         )
-        reason = (
-            "识别为知识库查询，但当前没有可用知识库。"
-        )
+        reason = "识别为知识库查询，但当前没有可用知识库。"
 
-    if (
-        requires_clarification
-        and not clarification_question
-    ):
-        clarification_question = (
-            "为了继续完成这个任务，"
-            "请补充必要的信息。"
-        )
+    if requires_clarification and not clarification_question:
+        clarification_question = "为了继续完成这个任务，" "请补充必要的信息。"
 
     # 如果知识问题没有产生改写结果，
     # 至少使用用户最新问题作为检索语句。
-    if (
-        analysis.intent == "knowledge_query"
-        and not rewritten_query
-    ):
-        rewritten_query = (
-            _get_latest_user_text(state)
-        )
+    if analysis.intent == "knowledge_query" and not rewritten_query:
+        rewritten_query = _get_latest_user_text(state)
 
     return {
         "intent": analysis.intent,
         "route": route,
         "route_reason": reason,
-        "needs_knowledge": (
-            analysis.needs_knowledge
-        ),
+        "needs_knowledge": (analysis.needs_knowledge),
         "needs_tools": analysis.needs_tools,
-        "requires_clarification": (
-            requires_clarification
-        ),
-        "clarification_question": (
-            clarification_question
-        ),
+        "requires_clarification": (requires_clarification),
+        "clarification_question": (clarification_question),
         "rewritten_query": rewritten_query,
     }
+
 
 def _build_fallback_analysis(
     state: State,
@@ -177,15 +134,13 @@ def _build_fallback_analysis(
     """模型分析失败时生成确定性的安全决策。"""
 
     if mode != "auto":
-        route =  mode
+        route = mode
     elif has_collection:
         route = "rag"
     else:
         route = "agent"
 
-    latest_user_text = _get_latest_user_text(
-        state
-    )
+    latest_user_text = _get_latest_user_text(state)
 
     if route == "rag":
         intent = "knowledge_query"
@@ -194,51 +149,35 @@ def _build_fallback_analysis(
     else:
         intent = "conversation"
 
-    failure_suffix = (
-        f"（{type(failure).__name__}）"
-        if failure
-        else ""
-    )
+    failure_suffix = f"（{type(failure).__name__}）" if failure else ""
 
     return {
         "intent": intent,
         "route": route,
         "route_reason": (
-            "请求分析模型不可用，"
-            f"使用确定性兜底路由到 {route}"
-            f"{failure_suffix}。"
+            "请求分析模型不可用，" f"使用确定性兜底路由到 {route}" f"{failure_suffix}。"
         ),
         "needs_knowledge": route == "rag",
         "needs_tools": route == "agent",
         "requires_clarification": False,
         "clarification_question": None,
-        "rewritten_query": (
-            latest_user_text
-            if route == "rag"
-            else None
-        ),
+        "rewritten_query": (latest_user_text if route == "rag" else None),
     }
+
 
 def clarify_request(
     state: State,
 ) -> dict[str, list[AIMessage]]:
     """向用户询问完成任务所缺少的信息。"""
 
-    question = state.get(
-        "clarification_question"
-    )
+    question = state.get("clarification_question")
 
     if not question:
-        question = (
-            "为了继续完成这个任务，"
-            "请补充必要的信息。"
-        )
+        question = "为了继续完成这个任务，" "请补充必要的信息。"
 
-    return {
-        "messages": [
-            AIMessage(content=question)
-        ]
-    }
+    return {"messages": [AIMessage(content=question)]}
+
+
 def _convert_to_langchain_messages(messages: list[Message]) -> list[Any]:
     """将传统领域消息转换为LangChain消息"""
     langchain_messages: list[Any] = [SystemMessage(content=SYSTEM_PROMPT)]
@@ -348,10 +287,7 @@ def request_tool_approval(state: State) -> dict[str, Any]:
     # 使用 Command(resume=...) 恢复后，interrupt 会返回用户决定。
     resume_value = interrupt(approval_request)
 
-    approved = (
-        isinstance(resume_value, dict)
-        and resume_value.get("approved") is True
-    )
+    approved = isinstance(resume_value, dict) and resume_value.get("approved") is True
 
     feedback: str | None = None
 
@@ -377,10 +313,7 @@ def request_tool_approval(state: State) -> dict[str, Any]:
         ToolMessage(
             content=f"工具执行已被用户拒绝。原因：{rejection_reason}",
             name=tool_call["name"],
-            tool_call_id=(
-                tool_call.get("id")
-                or f"rejected-{index}"
-            ),
+            tool_call_id=(tool_call.get("id") or f"rejected-{index}"),
         )
         for index, tool_call in enumerate(
             last_message.tool_calls,
@@ -406,30 +339,20 @@ def route_after_approval(
 
     return "agent"
 
+
 def prepare_retrieval_query(
     state: State,
 ) -> dict[str, str]:
     """优先使用 Router 改写后的独立检索问题。"""
 
-    rewritten_query = state.get(
-        "rewritten_query"
-    )
+    rewritten_query = state.get("rewritten_query")
 
-    if (
-        isinstance(rewritten_query, str)
-        and rewritten_query.strip()
-    ):
-        retrieval_query = (
-            rewritten_query.strip()
-        )
+    if isinstance(rewritten_query, str) and rewritten_query.strip():
+        retrieval_query = rewritten_query.strip()
     else:
-        retrieval_query = (
-            _get_latest_user_text(state)
-        )
+        retrieval_query = _get_latest_user_text(state)
 
-    return {
-        "retrieval_query": retrieval_query
-    }
+    return {"retrieval_query": retrieval_query}
 
 
 def retrieve_documents(
@@ -520,9 +443,8 @@ def select_request_route(
     }:
         return route
 
-    raise ValueError(
-        "请求分析没有产生有效路由"
-    )
+    raise ValueError("请求分析没有产生有效路由")
+
 
 # 格式化检索文档
 def _format_retrieved_documents(documents: list[RetrievedDocument]) -> str:
@@ -585,6 +507,7 @@ def _build_citations(documents: list[RetrievedDocument]) -> list[Citation]:
         )
     return citations
 
+
 def _format_recent_conversation(
     state: State,
     limit: int = 6,
@@ -608,11 +531,10 @@ def _format_recent_conversation(
         if not isinstance(content, str):
             content = str(content)
 
-        formatted_messages.append(
-            f"{role}：{content}"
-        )
+        formatted_messages.append(f"{role}：{content}")
 
     return "\n".join(formatted_messages)
+
 
 def _get_latest_user_text(state: State) -> str:
     """获取最新的用户消息"""

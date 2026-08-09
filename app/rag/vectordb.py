@@ -43,9 +43,7 @@ class VectorDBService:
             },
         )
 
-        stored_model = (collection.metadata or {}).get(
-            "embedding_model"
-        )
+        stored_model = (collection.metadata or {}).get("embedding_model")
 
         if stored_model != embedding_model:
             raise ValueError(
@@ -69,26 +67,17 @@ class VectorDBService:
         """保存文档以及已经生成的向量。"""
 
         if len(documents) != len(embeddings):
-            raise ValueError(
-                "文档数量与 Embedding 向量数量不一致"
-            )
+            raise ValueError("文档数量与 Embedding 向量数量不一致")
 
-        if metadatas is not None and (
-            len(metadatas) != len(documents)
-        ):
-            raise ValueError(
-                "文档数量与元数据数量不一致"
-            )
+        if metadatas is not None and (len(metadatas) != len(documents)):
+            raise ValueError("文档数量与元数据数量不一致")
 
         collection = self.get_or_create_collection(
             collection_name=collection_name,
             embedding_model=embedding_model,
         )
 
-        document_ids = ids or [
-            str(uuid4())
-            for _ in documents
-        ]
+        document_ids = ids or [str(uuid4()) for _ in documents]
 
         collection.upsert(
             documents=documents,
@@ -124,19 +113,13 @@ class VectorDBService:
             {
                 "document": document,
                 "metadatas": (
-                    metadatas[0][index]
-                    if index < len(metadatas[0])
-                    else None
+                    metadatas[0][index] if index < len(metadatas[0]) else None
                 ),
                 "distance": (
-                    distances[0][index]
-                    if index < len(distances[0])
-                    else None
+                    distances[0][index] if index < len(distances[0]) else None
                 ),
             }
-            for index, document in enumerate(
-                documents[0]
-            )
+            for index, document in enumerate(documents[0])
         ]
 
     def delete_collection(
@@ -145,14 +128,9 @@ class VectorDBService:
     ) -> None:
         """删除知识库集合。"""
 
-        self._client.delete_collection(
-            name=collection_name
-        )
+        self._client.delete_collection(name=collection_name)
 
     def list_collections(self) -> list[str]:
         """列出所有知识库集合。"""
 
-        return [
-            collection.name
-            for collection in self._client.list_collections()
-        ]
+        return [collection.name for collection in self._client.list_collections()]

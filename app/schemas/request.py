@@ -44,10 +44,13 @@ class AgentChatRequest(BaseModel):
             raise ValueError("RAG 模式下必须指定索引集合名称")
         return self
 
+
 class AgentResumeRequest(BaseModel):
     """智能体恢复请求"""
 
     session_id: str = Field(description="会话ID", min_length=1)
     interrupt_id: str = Field(description="中断ID", min_length=1)
     approved: bool = Field(description="是否批准工具执行", default=False)
-    feedback: str | None = Field(default=None, description="批准说明或拒绝原因",max_length=500)
+    feedback: str | None = Field(
+        default=None, description="批准说明或拒绝原因", max_length=500
+    )

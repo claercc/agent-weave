@@ -127,10 +127,7 @@ class RAGService:
             filename=filename,
         )
         chunks = self._chunk_service.split_documents(source_documents)
-        chunk_texts = [
-            chunk.page_content
-            for chunk in chunks
-        ]
+        chunk_texts = [chunk.page_content for chunk in chunks]
         embeddings = self._embedding_service.embed_documents(chunk_texts)
         ids = [
             self._build_chunk_id(

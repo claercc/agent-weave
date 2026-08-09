@@ -56,10 +56,7 @@ class EmbeddingService:
         if not texts:
             return []
 
-        normalized_texts = [
-            text.strip()
-            for text in texts
-        ]
+        normalized_texts = [text.strip() for text in texts]
 
         # 检查是否有空字符串
         # 这会导致模型报错
@@ -78,7 +75,7 @@ class EmbeddingService:
             # 指定返回的向量数据类型为 NumPy 数组 (np.ndarray)
             convert_to_numpy=True,
             # 自动将输出的向量进行 L2 归一化（使每个向量的模长/长度等于 1）
-            # 归一化后，“余弦相似度 (Cosine Similarity)” 的计算可以简化为更快的 “点积 (Dot Product)” 计算 
+            # 归一化后，“余弦相似度 (Cosine Similarity)” 的计算可以简化为更快的 “点积 (Dot Product)” 计算
             normalize_embeddings=True,
         )
 

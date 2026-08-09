@@ -52,13 +52,9 @@ class State(MessagesState):
     # RAG 检索状态
     rewritten_query: NotRequired[str | None]
     retrieval_query: NotRequired[str]
-    retrieved_documents: NotRequired[
-        list[RetrievedDocument]
-    ]
+    retrieved_documents: NotRequired[list[RetrievedDocument]]
     has_relevant_documents: NotRequired[bool]
     citations: NotRequired[list[Citation]]
 
     # Human-in-the-loop 审批状态
-    approval_decision: NotRequired[
-        ToolApprovalDecision
-    ]
+    approval_decision: NotRequired[ToolApprovalDecision]

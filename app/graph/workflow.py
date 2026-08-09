@@ -65,7 +65,8 @@ def create_agent_workflow(
                 "clarify": "clarify",
                 "chat": "chat",
                 "rag": "prepare_retrieval_query",
-                "agent": "agent"},
+                "agent": "agent",
+            },
         )
         builder.add_edge("clarify", END)
         builder.add_edge("prepare_retrieval_query", "retrieve")
@@ -84,12 +85,12 @@ def create_agent_workflow(
         builder.add_node("approval", request_tool_approval)
         builder.add_conditional_edges(
             "agent",
-            partial(route_after_agent,tool_service=tool_service),
+            partial(route_after_agent, tool_service=tool_service),
             {
                 "approval": "approval",
                 "tools": "tools",
                 "end": END,
-            }
+            },
         )
         builder.add_conditional_edges(
             "approval",
@@ -97,7 +98,7 @@ def create_agent_workflow(
             {
                 "tools": "tools",
                 "agent": "agent",
-            }
+            },
         )
         builder.add_edge("tools", "agent")
     else:
