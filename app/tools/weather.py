@@ -1,24 +1,21 @@
 from typing import Any
 
-import requests
+import httpx
 
-from app.tools.base import BaseTool
 from app.core.config import get_settings
+from app.tools.base import BaseTool
 
 
 class WeatherTool(BaseTool):
-    """天气工具"""
+    """通过 OpenWeather API 查询城市天气。"""
 
-    # def __init__(self):
-    #     self.name = "weather"
-    #     self.description = "获取天气信息"
-    #     self.parameters  = {
-    #         "location": {
-    #             "type": "string",
-    #             "description": "天气查询地点"
-    #         }
-    #     }
-    #     self.run = self._run
+    API_URL = (
+        "https://api.openweathermap.org/"
+        "data/2.5/weather"
+    )
+
+    REQUEST_TIMEOUT_SECONDS = 10.0
+
     @property
     def name(self) -> str:
         return "get_weather"
@@ -34,37 +31,127 @@ class WeatherTool(BaseTool):
             "properties": {
                 "city": {
                     "type": "string",
-                    "description": "城市名称，如：Beijing, Shanghai",
+                    "description": (
+                        "城市名称，如：Beijing、"
+                        "Shanghai、Singapore"
+                    ),
                 }
             },
             "required": ["city"],
         }
 
     def run(self, **kwargs: Any) -> str:
-        """获取指定城市的天气信息"""
+        """同步查询天气，供旧版同步接口使用。"""
 
-        city = kwargs.get("city")
+        city = self._validate_city(
+            kwargs.get("city")
+        )
 
-        if not isinstance(city, str) or not city.strip():
-            raise ValueError("城市名称不能为空")
-
-        city = city.strip()
         try:
-
-            settings = get_settings()
-            api_key = settings.require_openweather_api_key().get_secret_value()
-            url = (
-                "http://api.openweathermap.org/data/2.5/weather"
-                f"?q={city}&appid={api_key}&units=metric&lang=zh_cn"
-            )
-            response = requests.get(url)
-            data = response.json()
-            if response.status_code == 200:
-                return (
-                    f"{city} 的天气：{data['weather'][0]['description']}，"
-                    f"温度：{data['main']['temp']}°C"
+            with httpx.Client(
+                timeout=self.REQUEST_TIMEOUT_SECONDS,
+            ) as client:
+                response = client.get(
+                    self.API_URL,
+                    params=self._build_params(city),
                 )
-            else:
-                return f"天气查询失败，状态码：{response.status_code}"
-        except Exception as e:
-            return f"天气查询失败，错误信息：{str(e)}"
+
+            return self._format_response(
+                city,
+                response,
+            )
+        except Exception as exc:
+            return (
+                "天气查询失败，错误信息："
+                f"{exc}"
+            )
+
+    async def arun(self, **kwargs: Any) -> str:
+        """异步查询天气，供 Tool Agent 工作流使用。"""
+
+        city = self._validate_city(
+            kwargs.get("city")
+        )
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.REQUEST_TIMEOUT_SECONDS,
+            ) as client:
+                response = await client.get(
+                    self.API_URL,
+                    params=self._build_params(city),
+                )
+
+            return self._format_response(
+                city,
+                response,
+            )
+        except Exception as exc:
+            return (
+                "天气查询失败，错误信息："
+                f"{exc}"
+            )
+
+    @staticmethod
+    def _validate_city(value: Any) -> str:
+        """校验并规范化城市名称。"""
+
+        if not isinstance(value, str):
+            raise ValueError(
+                "城市名称不能为空"
+            )
+
+        city = value.strip()
+
+        if not city:
+            raise ValueError(
+                "城市名称不能为空"
+            )
+
+        return city
+
+    @staticmethod
+    def _build_params(
+        city: str,
+    ) -> dict[str, str]:
+        """构造 OpenWeather API 查询参数。"""
+
+        settings = get_settings()
+        api_key = (
+            settings
+            .require_openweather_api_key()
+            .get_secret_value()
+        )
+
+        return {
+            "q": city,
+            "appid": api_key,
+            "units": "metric",
+            "lang": "zh_cn",
+        }
+
+    @staticmethod
+    def _format_response(
+        city: str,
+        response: httpx.Response,
+    ) -> str:
+        """将天气 API 响应转换为 Agent 可读文本。"""
+
+        if response.status_code != 200:
+            return (
+                "天气查询失败，状态码："
+                f"{response.status_code}"
+            )
+
+        data = response.json()
+
+        description = data["weather"][0][
+            "description"
+        ]
+
+        temperature = data["main"]["temp"]
+
+        return (
+            f"{city} 的天气：{description}，"
+            f"温度：{temperature}°C"
+        )

@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from typing import Any
 
 from langchain_core.messages import (
@@ -20,14 +20,16 @@ class AgentService:
     def __init__(self, workflow: Any) -> None:
         self._workflow = workflow
 
-    def chat(
+    async def chat(
         self,
         session_id: str,
         message: str,
         collection_name: str | None = None,
         mode: RoutingMode = "auto",
     ) -> AgentChatResponse:
-        result = self._workflow.invoke(
+        """异步执行一次完整的 Agent 请求。"""
+
+        result = await self._workflow.ainvoke(
             self._build_input(
                 session_id=session_id,
                 message=message,
@@ -42,7 +44,11 @@ class AgentService:
 
         answer = self._find_final_answer(current_turn_messages)
         used_tools = self._find_requested_tools(current_turn_messages)
-        citations = result.get("citations", []) if result.get("route") == "rag" else []
+        citations = (
+            result.get("citations", [])
+            if result.get("route") == "rag"
+            else []
+        )
 
         return AgentChatResponse(
             session_id=session_id,
@@ -56,14 +62,14 @@ class AgentService:
             citations=citations,
         )
 
-    def stream_chat(
+    async def stream_chat(
         self,
         session_id: str,
         message: str,
         collection_name: str | None = None,
         mode: RoutingMode = "auto",
-    ) -> Iterator[str]:
-        """启动新的 Agent SSE 工作流。"""
+    ) -> AsyncIterator[str]:
+        """启动新的异步 Agent SSE 工作流。"""
 
         yield encode_sse(
             "start",
@@ -73,7 +79,7 @@ class AgentService:
             },
         )
 
-        yield from self._stream_workflow(
+        async for event in self._stream_workflow(
             input_value=self._build_input(
                 session_id=session_id,
                 message=message,
@@ -82,22 +88,23 @@ class AgentService:
             ),
             session_id=session_id,
             route="agent",
-            route_reason=("当前工作流未启用路由器，直接执行 Agent。"),
+            route_reason="当前工作流未启用路由器，直接执行 Agent。",
             used_tools=[],
             citations=[],
-        )
+        ):
+            yield event
 
-    def resume_chat(
+    async def resume_chat(
         self,
         session_id: str,
         interrupt_id: str,
         approved: bool,
         feedback: str | None = None,
-    ) -> Iterator[str]:
-        """根据人工审批结果恢复被暂停的 Agent 工作流。"""
+    ) -> AsyncIterator[str]:
+        """根据人工审批结果异步恢复被暂停的 Agent 工作流。"""
 
         config = self._build_config(session_id)
-        snapshot = self._workflow.get_state(config)
+        snapshot = await self._workflow.aget_state(config)
         values = snapshot.values or {}
 
         route = values.get("route", "agent")
@@ -107,16 +114,26 @@ class AgentService:
         )
 
         messages = values.get("messages", [])
-        current_turn_messages = self._get_current_turn_messages(messages)
+        current_turn_messages = self._get_current_turn_messages(
+            messages
+        )
 
         # 这里只统计已经产生 ToolMessage 的工具，
         # 避免把“提出调用但被拒绝”的工具算成已执行。
-        used_tools = self._find_executed_tools(current_turn_messages)
+        used_tools = self._find_executed_tools(
+            current_turn_messages
+        )
 
-        citations = values.get("citations", []) if route == "rag" else []
+        citations = (
+            values.get("citations", [])
+            if route == "rag"
+            else []
+        )
 
         normalized_feedback = (
-            feedback.strip() if isinstance(feedback, str) and feedback.strip() else None
+            feedback.strip()
+            if isinstance(feedback, str) and feedback.strip()
+            else None
         )
 
         yield encode_sse(
@@ -140,16 +157,17 @@ class AgentService:
             }
         )
 
-        yield from self._stream_workflow(
+        async for event in self._stream_workflow(
             input_value=command,
             session_id=session_id,
             route=route,
             route_reason=route_reason,
             used_tools=used_tools,
             citations=citations,
-        )
+        ):
+            yield event
 
-    def _stream_workflow(
+    async def _stream_workflow(
         self,
         input_value: Any,
         session_id: str,
@@ -157,7 +175,7 @@ class AgentService:
         route_reason: str,
         used_tools: list[str],
         citations: list[dict[str, Any]],
-    ) -> Iterator[str]:
+    ) -> AsyncIterator[str]:
         """将 LangGraph stream 转换成前端使用的 SSE 事件。"""
 
         final_answer = ""
@@ -167,14 +185,14 @@ class AgentService:
         retrieved_candidate_count = 0
 
         try:
-            stream = self._workflow.stream(
+            stream = self._workflow.astream(
                 input_value,
                 config=self._build_config(session_id),
                 stream_mode=["updates", "messages"],
                 subgraphs=True,
             )
 
-            for namespace,stream_mode, chunk in stream:
+            async for namespace,stream_mode, chunk in stream:
                 if stream_mode == "messages":
                     message_chunk, metadata = chunk
                     node_name = metadata.get("langgraph_node")

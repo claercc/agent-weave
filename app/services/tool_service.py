@@ -32,6 +32,66 @@ class ToolService:
                 tool_name, f"工具 {tool_name} 执行失败，错误信息：{str(e)}"
             )
 
+    async def call_tool_async(
+        self,
+        tool_name: str,
+        **kwargs: Any,
+    ) -> ToolCallResult:
+        """异步调用工具。
+
+        原生异步工具会直接执行异步 I/O；
+        同步工具由 BaseTool.arun() 放入工作线程执行。
+        """
+
+        try:
+            tool = self._tool_registry.get(
+                tool_name
+            )
+
+            if not tool:
+                return ToolCallResult.error_result(
+                    tool_name,
+                    f"工具 {tool_name} 不存在",
+                )
+
+            required_params = (
+                self._get_required_params(tool)
+            )
+
+            missing_params = [
+                param
+                for param in required_params
+                if param not in kwargs
+            ]
+
+            if missing_params:
+                return ToolCallResult.error_result(
+                    tool_name,
+                    (
+                        "缺少参数："
+                        f"{', '.join(missing_params)}"
+                    ),
+                )
+
+            result = await tool.arun(
+                **kwargs
+            )
+
+            return (
+                ToolCallResult.success_result(
+                    tool_name,
+                    result,
+                )
+            )
+        except Exception as exc:
+            return ToolCallResult.error_result(
+                tool_name,
+                (
+                    f"工具 {tool_name} 执行失败，"
+                    f"错误信息：{exc}"
+                ),
+            )
+
     def _get_required_params(self, tool: BaseTool) -> list[str]:
         """获取工具必填参数"""
         if tool.parameters and "required" not in tool.parameters:
@@ -68,14 +128,14 @@ class ToolService:
             result = self.call_tool(tool_name, **params)
             if not result.success:
                 raise ValueError(f"工具 {tool_name} 执行失败，错误信息：{result.error}")
-            return self._serialize_result(result.data)
+            return self.serialize_result(result.data)
         except json.JSONDecodeError as e:
             raise ValueError(f"工具 {tool_name} 参数解析失败，错误信息：{str(e)}")
         except Exception as e:
             raise ValueError(f"工具 {tool_name} 执行失败，错误信息：{str(e)}")
 
     @staticmethod
-    def _serialize_result(data: Any) -> str:
+    def serialize_result(data: Any) -> str:
         if data is None:
             return ""
 

@@ -8,6 +8,7 @@ from app.domain.routing import (
     Route,
     RoutingMode,
 )
+from app.models.output_model import ToolCallResult
 from app.prompts.system import SYSTEM_PROMPT
 from app.services.tool_service import ToolService
 from typing import Any, Literal, cast
@@ -25,12 +26,12 @@ from langgraph.types import interrupt
 
 logger = logging.getLogger(__name__)
 
-def route_request(
+async def route_request(
     state: State,
     *,
     router_llm: ChatOpenAI | None = None,
 ) -> dict[str, ProposedDecision]:
-    """调用模型产生原始请求分析建议。
+    """异步调用模型，产生原始请求分析建议。
 
     该节点只负责语义分析，不负责业务校验。
     返回结果必须经过 validate_decision 后才能用于路由。
@@ -54,6 +55,8 @@ def route_request(
         state
     )
 
+    # 没有配置 Router 模型时，直接使用确定性兜底策略。
+    # 这个分支不发生网络请求，因此不需要 await。
     if router_llm is None:
         return {
             "proposed_decision": (
@@ -87,9 +90,11 @@ def route_request(
             )
         )
 
+        # ainvoke 在等待模型响应期间释放事件循环，
+        # FastAPI 可以继续处理其他请求。
         analysis = cast(
             RequestAnalysis,
-            structured_router.invoke(
+            await structured_router.ainvoke(
                 analysis_messages
             ),
         )
@@ -395,26 +400,72 @@ def _create_langchain_tool(
     tool_dict: dict[str, Any],
     tool_service: ToolService,
 ) -> BaseTool:
-    """Create a LangChain tool backed by ToolService."""
-    function_spec = tool_dict["function"]
+    """将应用工具适配为 LangChain StructuredTool。
 
-    def tool_wrapper(**kwargs: Any) -> str:
-        result = tool_service.call_tool(function_spec["name"], **kwargs)
+    同时注册同步和异步执行入口：
+    同步入口用于兼容旧调用链，
+    异步入口用于 LangGraph 异步工作流。
+    """
+
+    function_spec = tool_dict["function"]
+    tool_name = function_spec["name"]
+
+    def format_result(
+        result: ToolCallResult,
+    ) -> str:
+        """将应用工具结果转换为模型可读取的文本。"""
+
         if isinstance(result, str):
             return result
+
         if result.success:
-            return str(result.data)
-        return f"Tool execution failed: {result.error}"
+            return tool_service.serialize_result(result.data)
+
+        return (
+            "Tool execution failed: "
+            f"{result.error}"
+        )
+
+    def tool_wrapper(
+        **kwargs: Any,
+    ) -> str:
+        """同步工具适配入口。"""
+
+        result = tool_service.call_tool(
+            tool_name,
+            **kwargs,
+        )
+
+        return format_result(result)
+
+    async def async_tool_wrapper(
+        **kwargs: Any,
+    ) -> str:
+        """异步工具适配入口。"""
+
+        result = (
+            await tool_service.call_tool_async(
+                tool_name,
+                **kwargs,
+            )
+        )
+
+        return format_result(result)
 
     return StructuredTool.from_function(
         func=tool_wrapper,
-        args_schema=function_spec["parameters"],
-        name=function_spec["name"],
-        description=function_spec["description"],
+        coroutine=async_tool_wrapper,
+        args_schema=function_spec[
+            "parameters"
+        ],
+        name=tool_name,
+        description=function_spec[
+            "description"
+        ],
     )
 
 
-def agent_node(
+async def agent_node(
     state: State,
     *,
     llm: ChatOpenAI,
@@ -423,7 +474,7 @@ def agent_node(
     """向模型询问下一个响应或工具调用"""
     messages = [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
     model = llm.bind_tools(tools) if tools else llm
-    response = model.invoke(messages)
+    response = await model.ainvoke(messages)
     return {"messages": [response]}
 
 
@@ -646,7 +697,7 @@ def _format_retrieved_documents(documents: list[RetrievedDocument]) -> str:
     return "\n".join(parts)
 
 
-def generate_rag_answer(state: State, *, llm: ChatOpenAI) -> dict[str, Any]:
+async def generate_rag_answer(state: State, *, llm: ChatOpenAI) -> dict[str, Any]:
     """根据检索文档生成 RAG 回答"""
     query = state["retrieval_query"]
     documents = state.get("retrieved_documents", [])
@@ -668,7 +719,7 @@ def generate_rag_answer(state: State, *, llm: ChatOpenAI) -> dict[str, Any]:
         ),
         HumanMessage(content=(f"Question:\n{query}\n\n" f"Evidence:\n{context}")),
     ]
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages)
     return {"messages": [response], "citations": citations}
 
 

@@ -1,87 +1,99 @@
-from fastapi import APIRouter, Depends
-from langchain_openai import ChatOpenAI
-
-from app.core.config import Settings, get_settings
-from app.graph.workflow import create_agent_workflow
-from app.rag.embedding import EmbeddingService
-from app.schemas.request import AgentChatRequest, AgentResumeRequest
-from app.schemas.response import AgentChatResponse
-from app.services.agent_service import AgentService
-from app.services.tool_service import ToolService, get_tool_service
-from functools import lru_cache
-
-from langgraph.checkpoint.memory import InMemorySaver
-from app.rag.retriever import Retriever
-from app.rag.vectordb import VectorDBService
+from fastapi import (
+    APIRouter,
+    Depends,
+    Request,
+)
 from fastapi.responses import StreamingResponse
 
-router = APIRouter(prefix="/agent", tags=["agent"])
+from app.schemas.request import (
+    AgentChatRequest,
+    AgentResumeRequest,
+)
+from app.schemas.response import AgentChatResponse
+from app.services.agent_service import AgentService
 
+router = APIRouter(
+    prefix="/agent",
+    tags=["agent"],
+)
 
-@lru_cache()
-def get_agent_retriever() -> Retriever:
-    settings = get_settings()
-    vector_db_service = VectorDBService()
-    embedding_service = EmbeddingService(settings)
-    return Retriever(vector_db_service, embedding_service)
-
-
-@lru_cache()
-def get_agent_checkpointer() -> InMemorySaver:
-    return InMemorySaver()
-
-
-def get_agent_service(
-    settings: Settings = Depends(get_settings),
-    tool_service: ToolService = Depends(get_tool_service),
-    checkpointer: InMemorySaver = Depends(get_agent_checkpointer),
-    retriever: Retriever = Depends(get_agent_retriever),
+async def get_agent_service(
+    request: Request,
 ) -> AgentService:
-    llm = ChatOpenAI(
-        model=settings.model_name,
-        api_key=settings.require_openai_api_key(),
-        base_url=settings.openai_api_base,
+    """从 FastAPI 应用状态中取得 AgentService。
+
+    AgentService 已经在 lifespan 启动阶段创建，
+    当前依赖不会重新创建模型、Retriever 或 Workflow。
+    """
+
+    agent_service = getattr(
+        request.app.state,
+        "agent_service",
+        None,
     )
-    workflow = create_agent_workflow(
-        llm=llm,
-        tool_service=tool_service,
-        checkpointer=checkpointer,
-        retriever=retriever,
-    )
-    return AgentService(workflow)
+
+    if not isinstance(
+        agent_service,
+        AgentService,
+    ):
+        raise RuntimeError(
+            "AgentService 尚未初始化，"
+            "请确认 FastAPI lifespan 已正常执行"
+        )
+
+    return agent_service
 
 
-@router.post("/chat", response_model=AgentChatResponse)
-def chat_with_agent(
+@router.post(
+    "/chat",
+    response_model=AgentChatResponse,
+)
+async def chat_with_agent(
     request: AgentChatRequest,
-    agent_service: AgentService = Depends(get_agent_service),
+    agent_service: AgentService = Depends(
+        get_agent_service
+    ),
 ) -> AgentChatResponse:
-    return agent_service.chat(
+    """执行一次非流式 Agent 请求。"""
+
+    return await agent_service.chat(
         session_id=request.session_id,
         message=request.message,
-        collection_name=request.collection_name,
+        collection_name=(
+            request.collection_name
+        ),
         mode=request.mode,
     )
 
 
-@router.post("/chat/stream", response_class=StreamingResponse)
-def chat_with_agent_stream(
+@router.post(
+    "/chat/stream",
+    response_class=StreamingResponse,
+)
+async def chat_with_agent_stream(
     request: AgentChatRequest,
-    agent_service: AgentService = Depends(get_agent_service),
+    agent_service: AgentService = Depends(
+        get_agent_service
+    ),
 ) -> StreamingResponse:
+    """启动新的 Agent SSE 工作流。"""
+
     return StreamingResponse(
         agent_service.stream_chat(
             session_id=request.session_id,
             message=request.message,
-            collection_name=request.collection_name,
+            collection_name=(
+                request.collection_name
+            ),
             mode=request.mode,
         ),
         media_type="text/event-stream",
-        # 关闭缓存，确保实时性
         headers={
+            # 禁止浏览器和中间代理缓存 SSE。
             "Cache-Control": "no-cache",
-            # 告诉客户端和代理服务器不要缓存事件流
-            # 告诉 Nginx 等反向代理不要攒够一批数据再发送，否则看起来会像非流式响应
+
+            # 禁止 Nginx 等代理积攒响应块，
+            # 保证 token 和执行事件实时到达前端。
             "X-Accel-Buffering": "no",
         },
     )
@@ -91,16 +103,20 @@ def chat_with_agent_stream(
     "/chat/resume/stream",
     response_class=StreamingResponse,
 )
-def resume_agent_stream(
+async def resume_agent_stream(
     request: AgentResumeRequest,
-    agent_service: AgentService = Depends(get_agent_service),
+    agent_service: AgentService = Depends(
+        get_agent_service
+    ),
 ) -> StreamingResponse:
-    """根据用户审批结果恢复 Agent 工作流。"""
+    """根据人工审批结果恢复 Agent 工作流。"""
 
     return StreamingResponse(
         agent_service.resume_chat(
             session_id=request.session_id,
-            interrupt_id=request.interrupt_id,
+            interrupt_id=(
+                request.interrupt_id
+            ),
             approved=request.approved,
             feedback=request.feedback,
         ),
