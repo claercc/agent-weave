@@ -4,13 +4,19 @@ from langchain_openai import ChatOpenAI
 
 from app.domain.message import Message, MessageRole
 from app.domain.routing import (
+    RequestIntent,
     Route,
     RoutingMode,
 )
 from app.prompts.system import SYSTEM_PROMPT
 from app.services.tool_service import ToolService
 from typing import Any, Literal, cast
-from app.graph.state import State, RetrievedDocument, Citation
+from app.graph.state import (
+    Citation,
+    ProposedDecision,
+    RetrievedDocument,
+    State,
+)
 from app.rag.retriever import Retriever
 import logging
 from app.models.routing import RequestAnalysis
@@ -19,37 +25,50 @@ from langgraph.types import interrupt
 
 logger = logging.getLogger(__name__)
 
-
 def route_request(
     state: State,
     *,
     router_llm: ChatOpenAI | None = None,
-) -> dict[str, Any]:
-    """分析请求意图并生成结构化工作流决策。"""
+) -> dict[str, ProposedDecision]:
+    """调用模型产生原始请求分析建议。
+
+    该节点只负责语义分析，不负责业务校验。
+    返回结果必须经过 validate_decision 后才能用于路由。
+    """
 
     mode: RoutingMode = state.get(
         "mode",
         "auto",
     )
 
-    collection_name = state.get("collection_name")
+    collection_name = state.get(
+        "collection_name"
+    )
 
-    has_collection = bool(collection_name and collection_name.strip())
+    has_collection = bool(
+        collection_name
+        and collection_name.strip()
+    )
 
-    if mode == "rag" and not has_collection:
-        raise ValueError("RAG 模式下必须指定知识库名称")
-
-    conversation = _format_recent_conversation(state)
+    conversation = _format_recent_conversation(
+        state
+    )
 
     if router_llm is None:
-        return _build_fallback_analysis(
-            state=state,
-            mode=mode,
-            has_collection=has_collection,
-        )
+        return {
+            "proposed_decision": (
+                _build_fallback_analysis(
+                    state=state,
+                    mode=mode,
+                    has_collection=has_collection,
+                )
+            )
+        }
 
     analysis_messages = [
-        SystemMessage(content=REQUEST_ANALYSIS_PROMPT),
+        SystemMessage(
+            content=REQUEST_ANALYSIS_PROMPT
+        ),
         HumanMessage(
             content=(
                 f"用户指定模式：{mode}\n"
@@ -61,67 +80,56 @@ def route_request(
     ]
 
     try:
-        structured_router = router_llm.with_structured_output(
-            RequestAnalysis,
-            method="json_mode",
+        structured_router = (
+            router_llm.with_structured_output(
+                RequestAnalysis,
+                method="json_mode",
+            )
         )
 
         analysis = cast(
             RequestAnalysis,
-            structured_router.invoke(analysis_messages),
+            structured_router.invoke(
+                analysis_messages
+            ),
         )
     except Exception as exc:
-        logger.exception("结构化请求分析失败")
-
-        return _build_fallback_analysis(
-            state=state,
-            mode=mode,
-            has_collection=has_collection,
-            failure=exc,
+        logger.exception(
+            "结构化请求分析失败"
         )
 
-    route = analysis.route
-    reason = analysis.reason
-
-    # 显式模式拥有最高优先级，
-    # 但仍然保留模型产生的意图分析。
-    if mode != "auto":
-        route = mode
-        reason = f"用户显式选择 {mode} 模式；" f"{analysis.reason}"
-
-    requires_clarification = analysis.requires_clarification
-
-    clarification_question = analysis.clarification_question
-
-    rewritten_query = analysis.rewritten_query
-
-    # 自动模式下，如果模型选择 RAG，
-    # 但前端没有选择知识库，则先要求用户补充。
-    if route == "rag" and not has_collection:
-        route = "chat"
-        requires_clarification = True
-        clarification_question = (
-            "这个问题需要查询私有知识库，" "请先选择一个知识库后再继续。"
-        )
-        reason = "识别为知识库查询，但当前没有可用知识库。"
-
-    if requires_clarification and not clarification_question:
-        clarification_question = "为了继续完成这个任务，" "请补充必要的信息。"
-
-    # 如果知识问题没有产生改写结果，
-    # 至少使用用户最新问题作为检索语句。
-    if analysis.intent == "knowledge_query" and not rewritten_query:
-        rewritten_query = _get_latest_user_text(state)
+        return {
+            "proposed_decision": (
+                _build_fallback_analysis(
+                    state=state,
+                    mode=mode,
+                    has_collection=has_collection,
+                    failure=exc,
+                )
+            )
+        }
 
     return {
-        "intent": analysis.intent,
-        "route": route,
-        "route_reason": reason,
-        "needs_knowledge": (analysis.needs_knowledge),
-        "needs_tools": analysis.needs_tools,
-        "requires_clarification": (requires_clarification),
-        "clarification_question": (clarification_question),
-        "rewritten_query": rewritten_query,
+        "proposed_decision": {
+            "intent": analysis.intent,
+            "route": analysis.route,
+            "needs_knowledge": (
+                analysis.needs_knowledge
+            ),
+            "needs_tools": (
+                analysis.needs_tools
+            ),
+            "requires_clarification": (
+                analysis.requires_clarification
+            ),
+            "clarification_question": (
+                analysis.clarification_question
+            ),
+            "rewritten_query": (
+                analysis.rewritten_query
+            ),
+            "reason": analysis.reason,
+        }
     }
 
 
@@ -130,8 +138,8 @@ def _build_fallback_analysis(
     mode: RoutingMode,
     has_collection: bool,
     failure: Exception | None = None,
-) -> dict[str, Any]:
-    """模型分析失败时生成确定性的安全决策。"""
+) -> ProposedDecision:
+    """模型不可用时生成可校验的兜底建议。"""
 
     if mode != "auto":
         route = mode
@@ -140,7 +148,11 @@ def _build_fallback_analysis(
     else:
         route = "agent"
 
-    latest_user_text = _get_latest_user_text(state)
+    latest_user_text = _get_latest_user_text(
+        state
+    )
+
+    intent: RequestIntent
 
     if route == "rag":
         intent = "knowledge_query"
@@ -149,21 +161,199 @@ def _build_fallback_analysis(
     else:
         intent = "conversation"
 
-    failure_suffix = f"（{type(failure).__name__}）" if failure else ""
+    failure_suffix = (
+        f"（{type(failure).__name__}）"
+        if failure
+        else ""
+    )
 
     return {
         "intent": intent,
         "route": route,
-        "route_reason": (
-            "请求分析模型不可用，" f"使用确定性兜底路由到 {route}" f"{failure_suffix}。"
-        ),
         "needs_knowledge": route == "rag",
         "needs_tools": route == "agent",
         "requires_clarification": False,
         "clarification_question": None,
-        "rewritten_query": (latest_user_text if route == "rag" else None),
+        "rewritten_query": (
+            latest_user_text
+            if route == "rag"
+            else None
+        ),
+        "reason": (
+            "请求分析模型不可用，"
+            f"生成确定性兜底建议 {route}"
+            f"{failure_suffix}。"
+        ),
     }
 
+
+def validate_decision(
+    state: State,
+) -> dict[str, Any]:
+    """校验并规范 Router 模型产生的请求分析。
+
+    模型负责理解语义；本节点负责保证意图、路由、
+    知识库、工具需求和澄清状态之间保持一致。
+    """
+
+    decision = state.get(
+        "proposed_decision"
+    )
+
+    if decision is None:
+        raise ValueError(
+            "Router 没有产生请求分析建议"
+        )
+
+    mode: RoutingMode = state.get(
+        "mode",
+        "auto",
+    )
+
+    collection_name = state.get(
+        "collection_name"
+    )
+
+    has_collection = bool(
+        collection_name
+        and collection_name.strip()
+    )
+
+    intent = decision["intent"]
+
+    # 自动模式下不直接信任模型返回的 route，
+    # 而是根据已经受枚举约束的 intent 进行确定性映射。
+    intent_routes: dict[
+        RequestIntent,
+        Route,
+    ] = {
+        "conversation": "chat",
+        "knowledge_query": "rag",
+        "information_tool": "agent",
+        "action": "agent",
+    }
+
+    expected_route = intent_routes[intent]
+    route = expected_route
+    reason = decision["reason"]
+
+    if decision["route"] != expected_route:
+        reason = (
+            f"模型建议路由到 "
+            f"{decision['route']}，"
+            f"策略根据意图 {intent} "
+            f"修正为 {expected_route}；"
+            f"{decision['reason']}"
+        )
+
+    # 用户显式选择的模式拥有最高优先级。
+    if mode != "auto":
+        route = mode
+        reason = (
+            f"用户显式选择 {mode} 模式；"
+            f"{reason}"
+        )
+
+    requires_clarification = (
+        decision[
+            "requires_clarification"
+        ]
+    )
+
+    clarification_question = (
+        decision[
+            "clarification_question"
+        ]
+    )
+
+    rewritten_query = decision[
+        "rewritten_query"
+    ]
+
+    # knowledge_query 必须依赖知识库。
+    # 如果没有选择知识库，就先要求用户补充，
+    # 不能进入 RAG 后再发生运行时错误。
+    if (
+        intent == "knowledge_query"
+        and not has_collection
+    ):
+        route = "chat"
+        requires_clarification = True
+        clarification_question = (
+            "这个问题需要查询私有知识库，"
+            "请先选择一个知识库后再继续。"
+        )
+        reason = (
+            "识别为知识库查询，"
+            "但当前没有可用知识库。"
+        )
+
+    # 显式 RAG 模式同样必须存在知识库。
+    if route == "rag" and not has_collection:
+        route = "chat"
+        requires_clarification = True
+        clarification_question = (
+            "请先选择一个知识库，"
+            "再使用 RAG 模式继续提问。"
+        )
+        reason = (
+            "用户选择了 RAG 模式，"
+            "但当前没有可用知识库。"
+        )
+
+    # 需要澄清时必须存在能够展示给用户的问题。
+    if (
+        requires_clarification
+        and not clarification_question
+    ):
+        clarification_question = (
+            "为了继续完成这个任务，"
+            "请补充必要的信息。"
+        )
+
+    # 进入 RAG 时必须存在一条可执行的检索语句。
+    if route == "rag" and not rewritten_query:
+        rewritten_query = (
+            _get_latest_user_text(state)
+        )
+
+    # 非知识库请求不应携带无关的检索查询。
+    if (
+        intent != "knowledge_query"
+        and route != "rag"
+    ):
+        rewritten_query = None
+
+    # 最终能力需求由经过校验的意图和路由计算，
+    # 不直接信任模型返回的布尔值。
+    needs_knowledge = (
+        intent == "knowledge_query"
+        or route == "rag"
+    )
+
+    needs_tools = (
+        route == "agent"
+        and intent
+        in {
+            "information_tool",
+            "action",
+        }
+    )
+
+    return {
+        "intent": intent,
+        "route": route,
+        "route_reason": reason,
+        "needs_knowledge": needs_knowledge,
+        "needs_tools": needs_tools,
+        "requires_clarification": (
+            requires_clarification
+        ),
+        "clarification_question": (
+            clarification_question
+        ),
+        "rewritten_query": rewritten_query,
+    }
 
 def clarify_request(
     state: State,

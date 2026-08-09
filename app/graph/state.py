@@ -25,6 +25,21 @@ class RetrievedDocument(TypedDict):
     metadata: dict[str, Any]
     score: float | None
 
+class ProposedDecision(TypedDict):
+    """Router 模型产生的原始请求分析建议。
+
+    这份结果还没有经过确定性策略校验，
+    不能直接用于选择业务工作流。
+    """
+
+    intent: RequestIntent
+    route: Route
+    needs_knowledge: bool
+    needs_tools: bool
+    requires_clarification: bool
+    clarification_question: str | None
+    rewritten_query: str | None
+    reason: str
 
 class ToolApprovalDecision(TypedDict):
     """用户对工具执行请求的审批结果。"""
@@ -40,7 +55,7 @@ class State(MessagesState):
     mode: NotRequired[RoutingMode]
     collection_name: NotRequired[str | None]
 
-    # Router 产生的结构化请求分析
+    # validate_decision 校验后的最终决策
     intent: NotRequired[RequestIntent]
     route: NotRequired[Route]
     route_reason: NotRequired[str]
@@ -48,6 +63,8 @@ class State(MessagesState):
     needs_tools: NotRequired[bool]
     requires_clarification: NotRequired[bool]
     clarification_question: NotRequired[str | None]
+    # Router 模型产生的原始建议
+    proposed_decision: NotRequired[ProposedDecision]
 
     # RAG 检索状态
     rewritten_query: NotRequired[str | None]

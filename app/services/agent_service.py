@@ -171,9 +171,10 @@ class AgentService:
                 input_value,
                 config=self._build_config(session_id),
                 stream_mode=["updates", "messages"],
+                subgraphs=True,
             )
 
-            for stream_mode, chunk in stream:
+            for namespace,stream_mode, chunk in stream:
                 if stream_mode == "messages":
                     message_chunk, metadata = chunk
                     node_name = metadata.get("langgraph_node")
@@ -208,6 +209,18 @@ class AgentService:
                     continue
 
                 for node_name, update in chunk.items():
+                    # 子图内部节点已经通过 subgraphs=True 单独输出。
+                    # 主图中的 rag 和 tool_agent 更新只是子图最终状态汇总，
+                    # 如果再次处理会造成消息、工具和引用事件重复。
+                    if (
+                        not namespace
+                        and node_name
+                        in {
+                            "rag",
+                            "tool_agent",
+                        }
+                    ):
+                        continue
                     if node_name == "__interrupt__":
                         was_interrupted = True
 
@@ -237,7 +250,7 @@ class AgentService:
                     if not isinstance(update, dict):
                         continue
 
-                    if node_name == "router":
+                    if node_name == "validate_decision":
                         route = update.get("route", route)
                         route_reason = update.get(
                             "route_reason",
