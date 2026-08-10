@@ -30,3 +30,6 @@ htmlcov/
 
 # Local embedding models
 .models/
+
+codex.md
+tare.md
