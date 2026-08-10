@@ -145,3 +145,12 @@ def test_load_rejects_empty_file() -> None:
             content=b"",
             filename="empty.pdf",
         )
+
+
+@patch("app.rag.pdf_loader.PdfReader")
+def test_load_rejects_too_many_pages(mock_pdf_reader: Mock) -> None:
+    mock_pdf_reader.return_value.pages = [Mock(), Mock()]
+    loader = PdfDocumentLoader(ocr_service=Mock(), max_pages=1)
+
+    with pytest.raises(ValueError, match="PDF 页数不能超过 1 页"):
+        loader.load(content=b"%PDF-fake", filename="large.pdf")

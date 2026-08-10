@@ -35,9 +35,7 @@ async def lifespan(
     init_tools()
 
     # Workflow 只在应用启动时编译一次。
-    application.state.agent_service = (
-        build_agent_service(settings)
-    )
+    application.state.agent_service = build_agent_service(settings)
 
     yield
 

@@ -68,6 +68,11 @@ def main() -> int:
             print("\n.venv 已存在，继续使用当前虚拟环境。")
 
         venv_python = get_venv_python()
+        lock_file = (
+            "requirements-dev.lock"
+            if sys.platform == "win32"
+            else "requirements-dev-linux.lock"
+        )
 
         run(
             [
@@ -77,7 +82,7 @@ def main() -> int:
                 "install",
                 "--require-hashes",
                 "--requirement",
-                "requirements-dev.lock",
+                lock_file,
             ]
         )
 

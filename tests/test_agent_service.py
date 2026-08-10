@@ -1,11 +1,14 @@
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.services.agent_service import AgentService
 
 
-def test_used_tools_only_contains_tools_from_current_turn() -> None:
+@pytest.mark.anyio
+async def test_used_tools_only_contains_tools_from_current_turn() -> None:
     tool_call_message = AIMessage(
         content="",
         tool_calls=[
@@ -36,18 +39,19 @@ def test_used_tools_only_contains_tools_from_current_turn() -> None:
     ]
 
     workflow = Mock()
-    workflow.invoke.side_effect = [
+    workflow.ainvoke = AsyncMock()
+    workflow.ainvoke.side_effect = [
         {"messages": first_turn_messages},
         {"messages": complete_history_after_second_turn},
     ]
 
     agent_service = AgentService(workflow)
 
-    first_response = agent_service.chat(
+    first_response = await agent_service.chat(
         session_id="session-001",
         message="What is the weather?",
     )
-    second_response = agent_service.chat(
+    second_response = await agent_service.chat(
         session_id="session-001",
         message="Thank you.",
     )
@@ -56,9 +60,11 @@ def test_used_tools_only_contains_tools_from_current_turn() -> None:
     assert second_response.used_tools == []
 
 
-def test_agent_service_passes_collection_name_to_workflow() -> None:
+@pytest.mark.anyio
+async def test_agent_service_passes_collection_name_to_workflow() -> None:
     workflow = Mock()
-    workflow.invoke.return_value = {
+    workflow.ainvoke = AsyncMock()
+    workflow.ainvoke.return_value = {
         "messages": [
             HumanMessage(content="How is the project deployed?"),
             AIMessage(content="Deployment answer."),
@@ -67,22 +73,24 @@ def test_agent_service_passes_collection_name_to_workflow() -> None:
 
     agent_service = AgentService(workflow)
 
-    agent_service.chat(
+    await agent_service.chat(
         session_id="session-001",
         message="How is the project deployed?",
         collection_name="engineering",
     )
 
-    initial_state = workflow.invoke.call_args.args[0]
+    initial_state = workflow.ainvoke.call_args.args[0]
 
     assert initial_state["session_id"] == "session-001"
     assert initial_state["collection_name"] == "engineering"
     assert initial_state["messages"][0].content == ("How is the project deployed?")
 
 
-def test_agent_service_returns_rag_citations() -> None:
+@pytest.mark.anyio
+async def test_agent_service_returns_rag_citations() -> None:
     workflow = Mock()
-    workflow.invoke.return_value = {
+    workflow.ainvoke = AsyncMock()
+    workflow.ainvoke.return_value = {
         "route": "rag",
         "route_reason": "Explicit rag mode was requested.",
         "messages": [
@@ -101,7 +109,7 @@ def test_agent_service_returns_rag_citations() -> None:
 
     agent_service = AgentService(workflow)
 
-    response = agent_service.chat(
+    response = await agent_service.chat(
         session_id="session-001",
         message="Which framework is used?",
         collection_name="engineering",
@@ -113,4 +121,4 @@ def test_agent_service_returns_rag_citations() -> None:
     assert response.citations[0].source == "README.md"
     assert response.citations[0].score == 0.8
     assert response.route == "rag"
-    assert response.route_reason == "当前工作流未启用路由器，直接执行 Agent。"
+    assert response.route_reason == "Explicit rag mode was requested."

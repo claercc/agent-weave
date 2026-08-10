@@ -42,17 +42,15 @@ def build_agent_service(
     # 创建对象时不会立即发送网络请求。
     llm = ChatOpenAI(
         model=settings.model_name,
-        api_key=(
-            settings.require_openai_api_key()
-        ),
+        api_key=(settings.require_openai_api_key()),
         base_url=settings.openai_api_base,
+        timeout=settings.model_request_timeout_seconds,
+        max_retries=settings.model_max_retries,
     )
 
     # EmbeddingService 内部使用缓存加载 BGE 模型。
     # 此处创建服务不会立即执行模型推理。
-    embedding_service = EmbeddingService(
-        settings
-    )
+    embedding_service = EmbeddingService(settings)
 
     # VectorDBService 创建 Chroma 本地客户端。
     vector_db_service = VectorDBService()
@@ -79,8 +77,7 @@ def build_agent_service(
     )
 
     logger.info(
-        "Agent Workflow 初始化完成，模型：%s，"
-        "Embedding：%s",
+        "Agent Workflow 初始化完成，模型：%s，" "Embedding：%s",
         settings.model_name,
         embedding_service.model_name,
     )

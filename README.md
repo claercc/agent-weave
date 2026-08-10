@@ -369,3 +369,104 @@ Copy-Item .env.example .env
 OPENAI_API_KEY=你的模型服务密钥
 OPENAI_BASE_URL=https://api.deepseek.com
 MODEL_NAME=你的聊天模型名称
+MODEL_REQUEST_TIMEOUT_SECONDS=30
+MODEL_MAX_RETRIES=2
+```
+
+天气工具还需要填写 `OPENWEATHER_API_KEY`。本地 Embedding 模型会在首次使用 RAG 时下载。
+
+### 4. 启动后端
+
+Windows：
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
+
+Linux 或 macOS：
+
+```bash
+./.venv/bin/python main.py
+```
+
+验证服务：
+
+```bash
+curl http://127.0.0.1:8000/api/health/ready
+```
+
+API 文档位于 `http://127.0.0.1:8000/docs`。
+
+### 5. 启动前端
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm ci
+npm run dev
+```
+
+Windows PowerShell 可使用：
+
+```powershell
+cd frontend
+Copy-Item .env.example .env.local
+npm.cmd ci
+npm.cmd run dev
+```
+
+浏览器访问 `http://127.0.0.1:3000`。如果后端不在本机，修改前端的 `BACKEND_BASE_URL`。
+
+### Docker 启动后端
+
+```bash
+docker compose up --build
+```
+
+当前 Compose 管理后端、Chroma 数据卷和模型缓存；前端仍按上一节单独启动。
+
+## API 示例
+
+普通 Agent 请求：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"demo-1","message":"现在几点？","mode":"auto"}'
+```
+
+SSE 流式请求：
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/api/agent/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"demo-1","message":"介绍一下这个项目","mode":"chat"}'
+```
+
+PDF 上传限制为 10 MB、100 页。查询不存在的知识库会返回 `404`。
+
+## 质量检查
+
+后端：
+
+```bash
+python scripts/check.py
+```
+
+前端：
+
+```bash
+cd frontend
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+GitHub Actions 会同时运行前后端检查。
+
+## 已知限制
+
+- LangGraph 当前使用内存 checkpoint，服务重启后会话和待审批状态不会保留。
+- 当前没有用户认证，默认用于本地学习和作品演示，不应直接暴露到公网。
+- Compose 当前只启动后端；生产部署需要为前端和后端配置独立域名、认证与限流。
+- 本地 BGE、OCR 和 Chroma 更适合单机演示；多实例部署需要独立模型服务和持久化数据库。

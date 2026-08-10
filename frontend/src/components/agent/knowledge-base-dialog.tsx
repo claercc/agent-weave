@@ -3,7 +3,7 @@
 import {
   ChangeEvent,
   useCallback,
-  useEffect,
+  useRef,
   useState,
 } from "react";
 import {
@@ -59,6 +59,7 @@ export function KnowledgeBaseDialog({
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const loadAbortControllerRef = useRef<AbortController | null>(null);
 
   const loadCollections = useCallback(
     async (signal?: AbortSignal) => {
@@ -83,25 +84,21 @@ export function KnowledgeBaseDialog({
     [],
   );
 
-  useEffect(() => {
-    if (!open) {
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    loadAbortControllerRef.current?.abort();
+    loadAbortControllerRef.current = null;
+
+    if (!nextOpen) {
       return;
     }
 
+    setCollectionName(value || "project-demo");
+
     const abortController = new AbortController();
-
+    loadAbortControllerRef.current = abortController;
     void loadCollections(abortController.signal);
-
-    return () => {
-      abortController.abort();
-    };
-  }, [loadCollections, open]);
-
-  useEffect(() => {
-    if (value) {
-      setCollectionName(value);
-    }
-  }, [value]);
+  }
 
   function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
@@ -163,7 +160,7 @@ export function KnowledgeBaseDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button
           type="button"

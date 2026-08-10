@@ -12,9 +12,15 @@ from app.rag.ocr import OCRService, get_ocr_service
 class PdfDocumentLoader:
     """PDF文档加载器"""
 
-    def __init__(self, ocr_service: OCRService | None = None, ocr_dpi: int = 200):
+    def __init__(
+        self,
+        ocr_service: OCRService | None = None,
+        ocr_dpi: int = 200,
+        max_pages: int = 100,
+    ):
         self._ocr_service = ocr_service or get_ocr_service()
         self._ocr_dpi = ocr_dpi
+        self._max_pages = max_pages
 
     def load(self, content: bytes, filename: str) -> list[Document]:
         """加载PDF文档"""
@@ -29,6 +35,9 @@ class PdfDocumentLoader:
             reader = PdfReader(BytesIO(content))
         except (PdfReadError, ValueError, OSError) as e:
             raise ValueError(f"无法读取PDF文件: {e}") from e
+
+        if len(reader.pages) > self._max_pages:
+            raise ValueError(f"PDF 页数不能超过 {self._max_pages} 页")
 
         documents: list[Document] = []
         render_document: pymupdf.Document | None = None

@@ -56,7 +56,10 @@ def test_ingest_pdf_parses_chunks_and_stores_documents() -> None:
 
     rag_service._pdf_loader = Mock()
     rag_service._chunk_service = Mock()
+    rag_service._embedding_service = Mock()
     rag_service._vector_db_service = Mock()
+    rag_service._embedding_service.model_name = "test-embedding"
+    rag_service._embedding_service.embed_documents.return_value = [[0.1, 0.2]]
 
     source_document = Document(
         page_content="Tokyo travel guide.",
@@ -100,5 +103,7 @@ def test_ingest_pdf_parses_chunks_and_stores_documents() -> None:
     assert call_arguments["collection_name"] == ("travel-guides")
     assert call_arguments["documents"] == ["Visit Sensoji early."]
     assert call_arguments["metadatas"] == [chunk.metadata]
+    assert call_arguments["embeddings"] == [[0.1, 0.2]]
+    assert call_arguments["embedding_model"] == "test-embedding"
     assert len(call_arguments["ids"]) == 1
     assert len(call_arguments["ids"][0]) == 64

@@ -28,7 +28,7 @@ def test_pdf_ingestion_accepts_multipart_upload() -> None:
         files={
             "file": (
                 "guide.pdf",
-                b"fake-pdf-content",
+                b"%PDF-fake-content",
                 "application/pdf",
             )
         },
@@ -46,7 +46,7 @@ def test_pdf_ingestion_accepts_multipart_upload() -> None:
     }
 
     rag_service.ingest_pdf.assert_called_once_with(
-        content=b"fake-pdf-content",
+        content=b"%PDF-fake-content",
         filename="guide.pdf",
         collection_name="guides",
     )
@@ -87,7 +87,7 @@ def test_pdf_ingestion_maps_invalid_pdf_to_400() -> None:
         files={
             "file": (
                 "broken.pdf",
-                b"broken-content",
+                b"%PDF-broken-content",
                 "application/pdf",
             )
         },
@@ -98,3 +98,18 @@ def test_pdf_ingestion_maps_invalid_pdf_to_400() -> None:
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Unable to read PDF"}
+
+
+def test_pdf_ingestion_rejects_invalid_pdf_signature() -> None:
+    rag_service = Mock()
+    client = create_test_client(rag_service)
+
+    response = client.post(
+        "/api/rag/ingest/pdf",
+        files={"file": ("fake.pdf", b"not-a-pdf", "application/pdf")},
+        data={"collection_name": "guides"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "文件内容不是有效的 PDF"}
+    rag_service.ingest_pdf.assert_not_called()

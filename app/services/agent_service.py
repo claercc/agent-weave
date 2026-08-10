@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+import logging
 from typing import Any
 
 from langchain_core.messages import (
@@ -12,6 +13,8 @@ from langgraph.types import Command
 from app.domain.routing import RoutingMode
 from app.schemas.response import AgentChatResponse
 from app.utils.stream import encode_sse
+
+logger = logging.getLogger(__name__)
 
 
 class AgentService:
@@ -44,11 +47,7 @@ class AgentService:
 
         answer = self._find_final_answer(current_turn_messages)
         used_tools = self._find_requested_tools(current_turn_messages)
-        citations = (
-            result.get("citations", [])
-            if result.get("route") == "rag"
-            else []
-        )
+        citations = result.get("citations", []) if result.get("route") == "rag" else []
 
         return AgentChatResponse(
             session_id=session_id,
@@ -114,26 +113,16 @@ class AgentService:
         )
 
         messages = values.get("messages", [])
-        current_turn_messages = self._get_current_turn_messages(
-            messages
-        )
+        current_turn_messages = self._get_current_turn_messages(messages)
 
         # 这里只统计已经产生 ToolMessage 的工具，
         # 避免把“提出调用但被拒绝”的工具算成已执行。
-        used_tools = self._find_executed_tools(
-            current_turn_messages
-        )
+        used_tools = self._find_executed_tools(current_turn_messages)
 
-        citations = (
-            values.get("citations", [])
-            if route == "rag"
-            else []
-        )
+        citations = values.get("citations", []) if route == "rag" else []
 
         normalized_feedback = (
-            feedback.strip()
-            if isinstance(feedback, str) and feedback.strip()
-            else None
+            feedback.strip() if isinstance(feedback, str) and feedback.strip() else None
         )
 
         yield encode_sse(
@@ -192,7 +181,7 @@ class AgentService:
                 subgraphs=True,
             )
 
-            async for namespace,stream_mode, chunk in stream:
+            async for namespace, stream_mode, chunk in stream:
                 if stream_mode == "messages":
                     message_chunk, metadata = chunk
                     node_name = metadata.get("langgraph_node")
@@ -230,14 +219,10 @@ class AgentService:
                     # 子图内部节点已经通过 subgraphs=True 单独输出。
                     # 主图中的 rag 和 tool_agent 更新只是子图最终状态汇总，
                     # 如果再次处理会造成消息、工具和引用事件重复。
-                    if (
-                        not namespace
-                        and node_name
-                        in {
-                            "rag",
-                            "tool_agent",
-                        }
-                    ):
+                    if not namespace and node_name in {
+                        "rag",
+                        "tool_agent",
+                    }:
                         continue
                     if node_name == "__interrupt__":
                         was_interrupted = True
@@ -487,11 +472,12 @@ class AgentService:
                 },
             )
 
-        except Exception as exc:
+        except Exception:
+            logger.exception("Agent SSE 工作流执行失败")
             yield encode_sse(
                 "error",
                 {
-                    "message": str(exc),
+                    "message": "Agent 工作流执行失败，请稍后重试。",
                 },
             )
 

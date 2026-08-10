@@ -1,8 +1,10 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const AGENT_STREAM_URL =
-  "http://127.0.0.1:8000/api/agent/chat/stream";
+const BACKEND_BASE_URL = (
+  process.env.BACKEND_BASE_URL ?? "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+const AGENT_STREAM_URL = `${BACKEND_BASE_URL}/api/agent/chat/stream`;
 
 export async function POST(request: Request): Promise<Response> {
   const requestBody = await request.text();

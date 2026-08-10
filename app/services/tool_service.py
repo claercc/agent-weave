@@ -44,9 +44,7 @@ class ToolService:
         """
 
         try:
-            tool = self._tool_registry.get(
-                tool_name
-            )
+            tool = self._tool_registry.get(tool_name)
 
             if not tool:
                 return ToolCallResult.error_result(
@@ -54,42 +52,26 @@ class ToolService:
                     f"工具 {tool_name} 不存在",
                 )
 
-            required_params = (
-                self._get_required_params(tool)
-            )
+            required_params = self._get_required_params(tool)
 
-            missing_params = [
-                param
-                for param in required_params
-                if param not in kwargs
-            ]
+            missing_params = [param for param in required_params if param not in kwargs]
 
             if missing_params:
                 return ToolCallResult.error_result(
                     tool_name,
-                    (
-                        "缺少参数："
-                        f"{', '.join(missing_params)}"
-                    ),
+                    ("缺少参数：" f"{', '.join(missing_params)}"),
                 )
 
-            result = await tool.arun(
-                **kwargs
-            )
+            result = await tool.arun(**kwargs)
 
-            return (
-                ToolCallResult.success_result(
-                    tool_name,
-                    result,
-                )
+            return ToolCallResult.success_result(
+                tool_name,
+                result,
             )
         except Exception as exc:
             return ToolCallResult.error_result(
                 tool_name,
-                (
-                    f"工具 {tool_name} 执行失败，"
-                    f"错误信息：{exc}"
-                ),
+                (f"工具 {tool_name} 执行失败，" f"错误信息：{exc}"),
             )
 
     def _get_required_params(self, tool: BaseTool) -> list[str]:
@@ -172,7 +154,9 @@ def init_tools() -> None:
     from app.tools.weather import WeatherTool
     from app.tools.calculator import CalculatorTool
     from app.tools.support_ticket import CreateSupportTicketTool
+    from app.tools.time import TimeTool
 
     register_tool(WeatherTool())
     register_tool(CalculatorTool())
+    register_tool(TimeTool())
     register_tool(CreateSupportTicketTool())

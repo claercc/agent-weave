@@ -1,6 +1,7 @@
 import pytest
 
 from app.tools.calculator import CalculatorTool
+from app.tools.time import TimeTool
 
 
 def test_calculator_multiplies_two_numbers() -> None:
@@ -24,3 +25,10 @@ def test_calculator_rejects_division_by_zero() -> None:
             right=0,
             operator="divide",
         )
+
+
+def test_time_tool_returns_requested_timezone() -> None:
+    result = TimeTool().run(timezone="UTC")
+
+    assert result["timezone"] == "UTC"
+    assert result["datetime"].endswith("+00:00")

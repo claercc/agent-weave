@@ -48,6 +48,22 @@ class Settings(BaseSettings):
         description="默认的聊天模型名称",
     )
 
+    model_request_timeout_seconds: float = Field(
+        default=30.0,
+        validation_alias="MODEL_REQUEST_TIMEOUT_SECONDS",
+        gt=0,
+        le=300,
+        description="模型 API 单次请求超时秒数",
+    )
+
+    model_max_retries: int = Field(
+        default=2,
+        validation_alias="MODEL_MAX_RETRIES",
+        ge=0,
+        le=10,
+        description="模型 API 可重试次数",
+    )
+
     openweather_api_key: SecretStr | None = Field(
         default=None,
         validation_alias="OPENWEATHER_API_KEY",

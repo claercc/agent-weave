@@ -17,6 +17,7 @@ router = APIRouter(
     tags=["agent"],
 )
 
+
 async def get_agent_service(
     request: Request,
 ) -> AgentService:
@@ -37,8 +38,7 @@ async def get_agent_service(
         AgentService,
     ):
         raise RuntimeError(
-            "AgentService 尚未初始化，"
-            "请确认 FastAPI lifespan 已正常执行"
+            "AgentService 尚未初始化，" "请确认 FastAPI lifespan 已正常执行"
         )
 
     return agent_service
@@ -50,18 +50,14 @@ async def get_agent_service(
 )
 async def chat_with_agent(
     request: AgentChatRequest,
-    agent_service: AgentService = Depends(
-        get_agent_service
-    ),
+    agent_service: AgentService = Depends(get_agent_service),
 ) -> AgentChatResponse:
     """执行一次非流式 Agent 请求。"""
 
     return await agent_service.chat(
         session_id=request.session_id,
         message=request.message,
-        collection_name=(
-            request.collection_name
-        ),
+        collection_name=(request.collection_name),
         mode=request.mode,
     )
 
@@ -72,9 +68,7 @@ async def chat_with_agent(
 )
 async def chat_with_agent_stream(
     request: AgentChatRequest,
-    agent_service: AgentService = Depends(
-        get_agent_service
-    ),
+    agent_service: AgentService = Depends(get_agent_service),
 ) -> StreamingResponse:
     """启动新的 Agent SSE 工作流。"""
 
@@ -82,16 +76,13 @@ async def chat_with_agent_stream(
         agent_service.stream_chat(
             session_id=request.session_id,
             message=request.message,
-            collection_name=(
-                request.collection_name
-            ),
+            collection_name=(request.collection_name),
             mode=request.mode,
         ),
         media_type="text/event-stream",
         headers={
             # 禁止浏览器和中间代理缓存 SSE。
             "Cache-Control": "no-cache",
-
             # 禁止 Nginx 等代理积攒响应块，
             # 保证 token 和执行事件实时到达前端。
             "X-Accel-Buffering": "no",
@@ -105,18 +96,14 @@ async def chat_with_agent_stream(
 )
 async def resume_agent_stream(
     request: AgentResumeRequest,
-    agent_service: AgentService = Depends(
-        get_agent_service
-    ),
+    agent_service: AgentService = Depends(get_agent_service),
 ) -> StreamingResponse:
     """根据人工审批结果恢复 Agent 工作流。"""
 
     return StreamingResponse(
         agent_service.resume_chat(
             session_id=request.session_id,
-            interrupt_id=(
-                request.interrupt_id
-            ),
+            interrupt_id=(request.interrupt_id),
             approved=request.approved,
             feedback=request.feedback,
         ),

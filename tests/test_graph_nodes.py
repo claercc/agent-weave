@@ -1,4 +1,6 @@
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 from langchain_openai import ChatOpenAI
 from app.graph.nodes import _get_langchain_tools
@@ -24,7 +26,7 @@ from app.graph.nodes import (
     retrieve_documents,
 )
 from app.rag.retriever import Retriever
-from app.models.routing import RouteDecision
+from app.models.routing import RequestAnalysis
 
 
 def test_get_langchain_tools_preserves_schema_and_uses_injected_service():
@@ -86,6 +88,7 @@ def test_convert_domain_messages_to_langchain_messages():
 
 
 def test_route_after_agent_ends_when_model_returns_final_answer():
+    tool_service = Mock(spec=ToolService)
     state = {
         "session_id": "session-001",
         "messages": [
@@ -93,12 +96,14 @@ def test_route_after_agent_ends_when_model_returns_final_answer():
         ],
     }
 
-    result = route_after_agent(state)
+    result = route_after_agent(state, tool_service=tool_service)
 
     assert result == "end"
 
 
 def test_route_after_agent_routes_to_tools_when_model_requests_tool():
+    tool_service = Mock(spec=ToolService)
+    tool_service.requires_approval.return_value = False
     state = {
         "session_id": "session-001",
         "messages": [
@@ -116,12 +121,13 @@ def test_route_after_agent_routes_to_tools_when_model_requests_tool():
         ],
     }
 
-    result = route_after_agent(state)
+    result = route_after_agent(state, tool_service=tool_service)
 
     assert result == "tools"
 
 
-def test_tool_node_executes_tool_call_and_returns_tool_message():
+@pytest.mark.anyio
+async def test_tool_node_executes_tool_call_and_returns_tool_message():
     tool_service = Mock(spec=ToolService)
     tool_service.list_tools.return_value = [
         {
@@ -139,10 +145,11 @@ def test_tool_node_executes_tool_call_and_returns_tool_message():
             },
         }
     ]
-    tool_service.call_tool.return_value = ToolCallResult.success_result(
+    tool_service.call_tool_async.return_value = ToolCallResult.success_result(
         tool_name="get_weather",
         data="sunny",
     )
+    tool_service.serialize_result.return_value = "sunny"
 
     tools = _get_langchain_tools(tool_service)
 
@@ -152,7 +159,7 @@ def test_tool_node_executes_tool_call_and_returns_tool_message():
     builder.add_edge("tools", END)
     workflow = builder.compile()
 
-    result = workflow.invoke(
+    result = await workflow.ainvoke(
         {
             "session_id": "session-001",
             "messages": [
@@ -178,36 +185,40 @@ def test_tool_node_executes_tool_call_and_returns_tool_message():
     assert tool_message.name == "get_weather"
     assert tool_message.tool_call_id == "call-001"
 
-    tool_service.call_tool.assert_called_once_with(
+    tool_service.call_tool_async.assert_awaited_once_with(
         "get_weather",
         city="Singapore",
     )
 
 
-def test_route_request_selects_rag_when_collection_is_provided():
+@pytest.mark.anyio
+async def test_route_request_selects_rag_when_collection_is_provided():
     state = {
         "session_id": "session-001",
         "collection_name": "engineering",
-        "messages": [],
+        "messages": [HumanMessage(content="Which framework is used?")],
     }
 
-    result = route_request(state)
+    result = await route_request(state)
 
-    assert result["route"] == "rag"
-    assert "deterministic fallback" in result["route_reason"]
+    decision = result["proposed_decision"]
+    assert decision["route"] == "rag"
+    assert "确定性兜底建议" in decision["reason"]
 
 
-def test_route_request_selects_agent_without_collection():
+@pytest.mark.anyio
+async def test_route_request_selects_agent_without_collection():
     state = {
         "session_id": "session-001",
         "collection_name": None,
-        "messages": [],
+        "messages": [HumanMessage(content="What time is it?")],
     }
 
-    result = route_request(state)
+    result = await route_request(state)
 
-    assert result["route"] == "agent"
-    assert "deterministic fallback" in result["route_reason"]
+    decision = result["proposed_decision"]
+    assert decision["route"] == "agent"
+    assert "确定性兜底建议" in decision["reason"]
 
 
 def test_prepare_retrieval_query_uses_latest_user_message():
@@ -227,7 +238,8 @@ def test_prepare_retrieval_query_uses_latest_user_message():
     }
 
 
-def test_retrieve_documents_returns_normalized_documents():
+@pytest.mark.anyio
+async def test_retrieve_documents_returns_normalized_documents():
     retriever = Mock(spec=Retriever)
     retriever.retrieve.return_value = [
         {
@@ -246,7 +258,7 @@ def test_retrieve_documents_returns_normalized_documents():
         "messages": [],
     }
 
-    result = retrieve_documents(
+    result = await retrieve_documents(
         state,
         retriever=retriever,
         top_k=3,
@@ -259,7 +271,7 @@ def test_retrieve_documents_returns_normalized_documents():
                 "metadata": {
                     "source": "README.md",
                 },
-                "score": 0.8,
+                "score": 0.75,
             }
         ]
     }
@@ -347,27 +359,35 @@ def test_route_after_grading_selects_generate_or_fallback():
     assert fallback_route == "fallback"
 
 
-def test_route_request_honors_explicit_chat_mode():
+@pytest.mark.anyio
+async def test_route_request_honors_explicit_chat_mode():
     state = {
         "session_id": "session-001",
         "mode": "chat",
         "collection_name": "engineering",
-        "messages": [],
+        "messages": [HumanMessage(content="hello")],
     }
 
-    result = route_request(state)
+    result = await route_request(state)
 
-    assert result["route"] == "chat"
-    assert "Explicit chat mode" in (result["route_reason"])
+    assert result["proposed_decision"]["route"] == "chat"
 
 
-def test_auto_router_uses_structured_llm_decision():
+@pytest.mark.anyio
+async def test_auto_router_uses_structured_llm_decision():
     router_llm = Mock(spec=ChatOpenAI)
     structured_router = Mock()
+    structured_router.ainvoke = AsyncMock()
 
     router_llm.with_structured_output.return_value = structured_router
-    structured_router.invoke.return_value = RouteDecision(
+    structured_router.ainvoke.return_value = RequestAnalysis(
+        intent="conversation",
         route="chat",
+        needs_knowledge=False,
+        needs_tools=False,
+        requires_clarification=False,
+        rewritten_query=None,
+        clarification_question=None,
         reason="The user is greeting the assistant.",
     )
 
@@ -380,26 +400,31 @@ def test_auto_router_uses_structured_llm_decision():
         ],
     }
 
-    result = route_request(
+    result = await route_request(
         state,
         router_llm=router_llm,
     )
 
-    assert result == {
-        "route": "chat",
-        "route_reason": ("The user is greeting the assistant."),
-    }
+    assert result["proposed_decision"]["route"] == "chat"
+    assert result["proposed_decision"]["reason"] == (
+        "The user is greeting the assistant."
+    )
 
-    router_llm.with_structured_output.assert_called_once_with(RouteDecision)
-    structured_router.invoke.assert_called_once()
+    router_llm.with_structured_output.assert_called_once_with(
+        RequestAnalysis,
+        method="json_mode",
+    )
+    structured_router.ainvoke.assert_awaited_once()
 
 
-def test_auto_router_falls_back_when_llm_fails():
+@pytest.mark.anyio
+async def test_auto_router_falls_back_when_llm_fails():
     router_llm = Mock(spec=ChatOpenAI)
     structured_router = Mock()
+    structured_router.ainvoke = AsyncMock()
 
     router_llm.with_structured_output.return_value = structured_router
-    structured_router.invoke.side_effect = RuntimeError("Router unavailable")
+    structured_router.ainvoke.side_effect = RuntimeError("Router unavailable")
 
     state = {
         "session_id": "session-001",
@@ -410,10 +435,11 @@ def test_auto_router_falls_back_when_llm_fails():
         ],
     }
 
-    result = route_request(
+    result = await route_request(
         state,
         router_llm=router_llm,
     )
 
-    assert result["route"] == "rag"
-    assert "deterministic fallback" in (result["route_reason"])
+    decision = result["proposed_decision"]
+    assert decision["route"] == "rag"
+    assert "确定性兜底建议" in decision["reason"]

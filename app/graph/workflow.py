@@ -45,16 +45,12 @@ def create_agent_workflow(
 
     # 默认复用主聊天模型进行请求分析。
     # 未来可以注入更便宜、更快速的独立 Router 模型。
-    effective_router_llm = (
-        router_llm or llm
-    )
+    effective_router_llm = router_llm or llm
 
     # 工具 Agent 无论是否启用 RAG 都可以独立工作。
-    tool_agent_subgraph = (
-        create_tool_agent_subgraph(
-            llm=llm,
-            tool_service=tool_service,
-        )
+    tool_agent_subgraph = create_tool_agent_subgraph(
+        llm=llm,
+        tool_service=tool_service,
     )
 
     builder.add_node(
@@ -136,6 +132,4 @@ def create_agent_workflow(
 
     # 主图 checkpointer 同时覆盖两个子图，
     # 用于会话记忆和人工审批恢复。
-    return builder.compile(
-        checkpointer=checkpointer
-    )
+    return builder.compile(checkpointer=checkpointer)

@@ -11,7 +11,10 @@ from app.domain.routing import (
 from app.models.output_model import ToolCallResult
 from app.prompts.system import SYSTEM_PROMPT
 from app.services.tool_service import ToolService
+from functools import partial
 from typing import Any, Literal, cast
+
+from anyio import to_thread
 from app.graph.state import (
     Citation,
     ProposedDecision,
@@ -25,6 +28,7 @@ from app.prompts.routing import REQUEST_ANALYSIS_PROMPT
 from langgraph.types import interrupt
 
 logger = logging.getLogger(__name__)
+
 
 async def route_request(
     state: State,
@@ -42,18 +46,11 @@ async def route_request(
         "auto",
     )
 
-    collection_name = state.get(
-        "collection_name"
-    )
+    collection_name = state.get("collection_name")
 
-    has_collection = bool(
-        collection_name
-        and collection_name.strip()
-    )
+    has_collection = bool(collection_name and collection_name.strip())
 
-    conversation = _format_recent_conversation(
-        state
-    )
+    conversation = _format_recent_conversation(state)
 
     # 没有配置 Router 模型时，直接使用确定性兜底策略。
     # 这个分支不发生网络请求，因此不需要 await。
@@ -69,9 +66,7 @@ async def route_request(
         }
 
     analysis_messages = [
-        SystemMessage(
-            content=REQUEST_ANALYSIS_PROMPT
-        ),
+        SystemMessage(content=REQUEST_ANALYSIS_PROMPT),
         HumanMessage(
             content=(
                 f"用户指定模式：{mode}\n"
@@ -83,25 +78,19 @@ async def route_request(
     ]
 
     try:
-        structured_router = (
-            router_llm.with_structured_output(
-                RequestAnalysis,
-                method="json_mode",
-            )
+        structured_router = router_llm.with_structured_output(
+            RequestAnalysis,
+            method="json_mode",
         )
 
         # ainvoke 在等待模型响应期间释放事件循环，
         # FastAPI 可以继续处理其他请求。
         analysis = cast(
             RequestAnalysis,
-            await structured_router.ainvoke(
-                analysis_messages
-            ),
+            await structured_router.ainvoke(analysis_messages),
         )
     except Exception as exc:
-        logger.exception(
-            "结构化请求分析失败"
-        )
+        logger.exception("结构化请求分析失败")
 
         return {
             "proposed_decision": (
@@ -118,21 +107,11 @@ async def route_request(
         "proposed_decision": {
             "intent": analysis.intent,
             "route": analysis.route,
-            "needs_knowledge": (
-                analysis.needs_knowledge
-            ),
-            "needs_tools": (
-                analysis.needs_tools
-            ),
-            "requires_clarification": (
-                analysis.requires_clarification
-            ),
-            "clarification_question": (
-                analysis.clarification_question
-            ),
-            "rewritten_query": (
-                analysis.rewritten_query
-            ),
+            "needs_knowledge": (analysis.needs_knowledge),
+            "needs_tools": (analysis.needs_tools),
+            "requires_clarification": (analysis.requires_clarification),
+            "clarification_question": (analysis.clarification_question),
+            "rewritten_query": (analysis.rewritten_query),
             "reason": analysis.reason,
         }
     }
@@ -153,9 +132,7 @@ def _build_fallback_analysis(
     else:
         route = "agent"
 
-    latest_user_text = _get_latest_user_text(
-        state
-    )
+    latest_user_text = _get_latest_user_text(state)
 
     intent: RequestIntent
 
@@ -166,11 +143,7 @@ def _build_fallback_analysis(
     else:
         intent = "conversation"
 
-    failure_suffix = (
-        f"（{type(failure).__name__}）"
-        if failure
-        else ""
-    )
+    failure_suffix = f"（{type(failure).__name__}）" if failure else ""
 
     return {
         "intent": intent,
@@ -179,15 +152,9 @@ def _build_fallback_analysis(
         "needs_tools": route == "agent",
         "requires_clarification": False,
         "clarification_question": None,
-        "rewritten_query": (
-            latest_user_text
-            if route == "rag"
-            else None
-        ),
+        "rewritten_query": (latest_user_text if route == "rag" else None),
         "reason": (
-            "请求分析模型不可用，"
-            f"生成确定性兜底建议 {route}"
-            f"{failure_suffix}。"
+            "请求分析模型不可用，" f"生成确定性兜底建议 {route}" f"{failure_suffix}。"
         ),
     }
 
@@ -201,28 +168,19 @@ def validate_decision(
     知识库、工具需求和澄清状态之间保持一致。
     """
 
-    decision = state.get(
-        "proposed_decision"
-    )
+    decision = state.get("proposed_decision")
 
     if decision is None:
-        raise ValueError(
-            "Router 没有产生请求分析建议"
-        )
+        raise ValueError("Router 没有产生请求分析建议")
 
     mode: RoutingMode = state.get(
         "mode",
         "auto",
     )
 
-    collection_name = state.get(
-        "collection_name"
-    )
+    collection_name = state.get("collection_name")
 
-    has_collection = bool(
-        collection_name
-        and collection_name.strip()
-    )
+    has_collection = bool(collection_name and collection_name.strip())
 
     intent = decision["intent"]
 
@@ -254,96 +212,52 @@ def validate_decision(
     # 用户显式选择的模式拥有最高优先级。
     if mode != "auto":
         route = mode
-        reason = (
-            f"用户显式选择 {mode} 模式；"
-            f"{reason}"
-        )
+        reason = f"用户显式选择 {mode} 模式；" f"{reason}"
 
-    requires_clarification = (
-        decision[
-            "requires_clarification"
-        ]
-    )
+    requires_clarification = decision["requires_clarification"]
 
-    clarification_question = (
-        decision[
-            "clarification_question"
-        ]
-    )
+    clarification_question = decision["clarification_question"]
 
-    rewritten_query = decision[
-        "rewritten_query"
-    ]
+    rewritten_query = decision["rewritten_query"]
 
     # knowledge_query 必须依赖知识库。
     # 如果没有选择知识库，就先要求用户补充，
     # 不能进入 RAG 后再发生运行时错误。
-    if (
-        intent == "knowledge_query"
-        and not has_collection
-    ):
+    if intent == "knowledge_query" and not has_collection:
         route = "chat"
         requires_clarification = True
         clarification_question = (
-            "这个问题需要查询私有知识库，"
-            "请先选择一个知识库后再继续。"
+            "这个问题需要查询私有知识库，" "请先选择一个知识库后再继续。"
         )
-        reason = (
-            "识别为知识库查询，"
-            "但当前没有可用知识库。"
-        )
+        reason = "识别为知识库查询，" "但当前没有可用知识库。"
 
     # 显式 RAG 模式同样必须存在知识库。
     if route == "rag" and not has_collection:
         route = "chat"
         requires_clarification = True
-        clarification_question = (
-            "请先选择一个知识库，"
-            "再使用 RAG 模式继续提问。"
-        )
-        reason = (
-            "用户选择了 RAG 模式，"
-            "但当前没有可用知识库。"
-        )
+        clarification_question = "请先选择一个知识库，" "再使用 RAG 模式继续提问。"
+        reason = "用户选择了 RAG 模式，" "但当前没有可用知识库。"
 
     # 需要澄清时必须存在能够展示给用户的问题。
-    if (
-        requires_clarification
-        and not clarification_question
-    ):
-        clarification_question = (
-            "为了继续完成这个任务，"
-            "请补充必要的信息。"
-        )
+    if requires_clarification and not clarification_question:
+        clarification_question = "为了继续完成这个任务，" "请补充必要的信息。"
 
     # 进入 RAG 时必须存在一条可执行的检索语句。
     if route == "rag" and not rewritten_query:
-        rewritten_query = (
-            _get_latest_user_text(state)
-        )
+        rewritten_query = _get_latest_user_text(state)
 
     # 非知识库请求不应携带无关的检索查询。
-    if (
-        intent != "knowledge_query"
-        and route != "rag"
-    ):
+    if intent != "knowledge_query" and route != "rag":
         rewritten_query = None
 
     # 最终能力需求由经过校验的意图和路由计算，
     # 不直接信任模型返回的布尔值。
-    needs_knowledge = (
-        intent == "knowledge_query"
-        or route == "rag"
-    )
+    needs_knowledge = intent == "knowledge_query" or route == "rag"
 
-    needs_tools = (
-        route == "agent"
-        and intent
-        in {
-            "information_tool",
-            "action",
-        }
-    )
+    needs_tools = route == "agent" and intent in {
+        "information_tool",
+        "action",
+    }
 
     return {
         "intent": intent,
@@ -351,14 +265,11 @@ def validate_decision(
         "route_reason": reason,
         "needs_knowledge": needs_knowledge,
         "needs_tools": needs_tools,
-        "requires_clarification": (
-            requires_clarification
-        ),
-        "clarification_question": (
-            clarification_question
-        ),
+        "requires_clarification": (requires_clarification),
+        "clarification_question": (clarification_question),
         "rewritten_query": rewritten_query,
     }
+
 
 def clarify_request(
     state: State,
@@ -421,10 +332,7 @@ def _create_langchain_tool(
         if result.success:
             return tool_service.serialize_result(result.data)
 
-        return (
-            "Tool execution failed: "
-            f"{result.error}"
-        )
+        return "Tool execution failed: " f"{result.error}"
 
     def tool_wrapper(
         **kwargs: Any,
@@ -443,11 +351,9 @@ def _create_langchain_tool(
     ) -> str:
         """异步工具适配入口。"""
 
-        result = (
-            await tool_service.call_tool_async(
-                tool_name,
-                **kwargs,
-            )
+        result = await tool_service.call_tool_async(
+            tool_name,
+            **kwargs,
         )
 
         return format_result(result)
@@ -455,13 +361,9 @@ def _create_langchain_tool(
     return StructuredTool.from_function(
         func=tool_wrapper,
         coroutine=async_tool_wrapper,
-        args_schema=function_spec[
-            "parameters"
-        ],
+        args_schema=function_spec["parameters"],
         name=tool_name,
-        description=function_spec[
-            "description"
-        ],
+        description=function_spec["description"],
     )
 
 
@@ -596,7 +498,7 @@ def prepare_retrieval_query(
     return {"retrieval_query": retrieval_query}
 
 
-def retrieve_documents(
+async def retrieve_documents(
     state: State, *, retriever: Retriever, top_k: int = 4
 ) -> dict[str, list[RetrievedDocument]]:
     """检索文档"""
@@ -606,8 +508,13 @@ def retrieve_documents(
         raise ValueError("Collection name is required for retrieval.")
     if not query:
         raise ValueError("Retrieval query is required.")
-    results = retriever.retrieve(
-        query=query, collection_name=collection_name, top_k=top_k
+    results = await to_thread.run_sync(
+        partial(
+            retriever.retrieve,
+            query=query,
+            collection_name=collection_name,
+            top_k=top_k,
+        )
     )
 
     documents: list[RetrievedDocument] = []

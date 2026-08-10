@@ -6,15 +6,19 @@ from fastapi import (
     HTTPException,
     UploadFile,
 )
+from anyio import to_thread
 from openai import OpenAI
+from app.core.exceptions import CollectionNotFoundError
 from app.core.config import Settings, get_settings
 from app.core.openai_client import get_openai_client
 from app.services.rag_service import RAGService
 from app.schemas.request import RAGQueryRequest, RAGIngestRequest
 from app.schemas.response import RAGResponse, PDFInfoResponse
+from functools import partial
 import logging
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
+MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024
 
 
 def get_rag_service(
@@ -37,9 +41,11 @@ def query_rag(
         response = rag_service.query(
             request.query, request.collection_name, top_k=request.top_k
         )
-    except Exception as e:
-        logging.error(f"查询失败，错误信息：{str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except CollectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.exception("RAG 查询失败")
+        raise HTTPException(status_code=500, detail="RAG 查询失败") from exc
     return response
 
 
@@ -57,11 +63,9 @@ def rag_ingest(
             request.texts, request.collection_name, metadatas=request.metadatas
         )
         logging.info(f"文档导入完成，集合 {request.collection_name}")
-    except Exception as e:
-        logging.error(
-            f"文档导入失败，集合 {request.collection_name}，错误信息：{str(e)}"
-        )
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logging.exception("文档导入失败，集合 %s", request.collection_name)
+        raise HTTPException(status_code=500, detail="文档导入失败") from exc
     return {"message": "Documents ingested successfully"}
 
 
@@ -84,8 +88,11 @@ def delete_collection(
     """
     try:
         rag_service._vector_db_service.delete_collection(collection_name)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except CollectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.exception("删除知识库失败：%s", collection_name)
+        raise HTTPException(status_code=500, detail="删除知识库失败") from exc
     return {"message": f"集合 {collection_name} 已删除"}
 
 
@@ -112,15 +119,29 @@ async def rag_ingest_pdf(
         raise HTTPException(status_code=400, detail="知识库名称不能为空")
 
     try:
-        content = await file.read()
-        chunk_count = rag_service.ingest_pdf(
-            content=content, filename=filename, collection_name=collection_name
+        content = await file.read(MAX_PDF_SIZE_BYTES + 1)
+
+        if len(content) > MAX_PDF_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail="PDF 文件不能超过 10 MB")
+
+        if not content.startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="文件内容不是有效的 PDF")
+
+        chunk_count = await to_thread.run_sync(
+            partial(
+                rag_service.ingest_pdf,
+                content=content,
+                filename=filename,
+                collection_name=collection_name,
+            )
         )
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as e:
-        logging.error(f"PDF 导入失败，错误信息：{str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except Exception as exc:
+        logging.exception("PDF 导入失败")
+        raise HTTPException(status_code=500, detail="PDF 导入失败") from exc
 
     return PDFInfoResponse(
         message="PDF 导入成功",

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -17,6 +17,9 @@ def liveness() -> HealthResponse:
 
 
 @router.get("/ready", response_model=HealthResponse)
-def readiness() -> HealthResponse:
+def readiness(request: Request) -> HealthResponse:
     """应用是否准备就绪，是否可以接收请求"""
+    if getattr(request.app.state, "agent_service", None) is None:
+        raise HTTPException(status_code=503, detail="AgentService 尚未准备就绪")
+
     return HealthResponse(status="ok")

@@ -4,6 +4,8 @@ from uuid import uuid4
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 
+from app.core.exceptions import CollectionNotFoundError
+
 
 class VectorDBService:
     """只负责向量存储和相似度查询。"""
@@ -95,10 +97,23 @@ class VectorDBService:
     ) -> list[dict[str, Any]]:
         """使用显式查询向量搜索文档。"""
 
-        collection = self.get_or_create_collection(
-            collection_name=collection_name,
-            embedding_model=embedding_model,
-        )
+        try:
+            collection = self._client.get_collection(
+                name=collection_name,
+                embedding_function=None,
+            )
+        except chromadb.errors.NotFoundError as exc:
+            raise CollectionNotFoundError(f"知识库 {collection_name} 不存在。") from exc
+
+        stored_model = (collection.metadata or {}).get("embedding_model")
+
+        if stored_model != embedding_model:
+            raise ValueError(
+                "知识库使用的 Embedding 模型不一致："
+                f"当前配置为 {embedding_model}，"
+                f"知识库记录为 {stored_model or 'unknown'}。"
+                "请删除并重新导入该知识库。"
+            )
 
         results = collection.query(
             query_embeddings=query_embedding,
@@ -128,7 +143,10 @@ class VectorDBService:
     ) -> None:
         """删除知识库集合。"""
 
-        self._client.delete_collection(name=collection_name)
+        try:
+            self._client.delete_collection(name=collection_name)
+        except chromadb.errors.NotFoundError as exc:
+            raise CollectionNotFoundError(f"知识库 {collection_name} 不存在。") from exc
 
     def list_collections(self) -> list[str]:
         """列出所有知识库集合。"""

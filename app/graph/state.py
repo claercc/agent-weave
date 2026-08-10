@@ -25,6 +25,7 @@ class RetrievedDocument(TypedDict):
     metadata: dict[str, Any]
     score: float | None
 
+
 class ProposedDecision(TypedDict):
     """Router 模型产生的原始请求分析建议。
 
@@ -40,6 +41,7 @@ class ProposedDecision(TypedDict):
     clarification_question: str | None
     rewritten_query: str | None
     reason: str
+
 
 class ToolApprovalDecision(TypedDict):
     """用户对工具执行请求的审批结果。"""

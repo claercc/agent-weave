@@ -47,9 +47,7 @@ def create_tool_agent_subgraph(
     """
 
     # 将应用自己的 BaseTool 适配为 LangChain Tool。
-    tools = _get_langchain_tools(
-        tool_service
-    )
+    tools = _get_langchain_tools(tool_service)
 
     builder = StateGraph(State)
 
