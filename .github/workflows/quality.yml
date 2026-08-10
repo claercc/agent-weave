@@ -68,3 +68,16 @@ jobs:
           npm run lint
           npx tsc --noEmit
           npm run build
+
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: quality
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+
+      - name: 构建后端镜像
+        run: docker build --tag ai-agent-backend:ci .

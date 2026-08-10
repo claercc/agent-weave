@@ -51,7 +51,7 @@ dev = [
   "black>=24.0.0",
   "flake8>=7.0.0",
   "mypy>=1.10.0",
-  "pip-tools==7.6.0",
+  "uv==0.12.3",
 ]
 
 [project.scripts]
