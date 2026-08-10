@@ -1,20 +1,20 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.core.config import Settings
 from app.core.lifespan import lifespan
+from pytest import MonkeyPatch
 
 
-def test_lifespan_initializes_tools(monkeypatch) -> None:
+def test_lifespan_initializes_tools(monkeypatch: MonkeyPatch) -> None:
     initialized = False
-    settings = Settings(openai_api_key="test-key")
+    settings = object()
     agent_service = object()
 
     def fake_init_tools() -> None:
         nonlocal initialized
         initialized = True
 
-    def fake_build_agent_service(actual_settings: Settings) -> object:
+    def fake_build_agent_service(actual_settings: object) -> object:
         assert actual_settings is settings
         return agent_service
 
