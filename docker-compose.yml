@@ -1,31 +1,42 @@
 services:
   backend:
     build:
-    # 表示 Docker 可以读取当前项目目录中的文件
       context: .
-      # 表示使用根目录的 Dockerfile 作为构建说明
       dockerfile: Dockerfile
 
-    # 将本地环境变量注入容器，但不会写入镜像。
     env_file:
       - .env
 
-    # 映射端口，将容器的端口 8000 映射到主机的端口 8000
     ports:
       - "8000:8000"
 
-    # 让容器正确转发和回收子进程信号。
     init: true
-
-    # 服务异常退出后自动重新启动。
     restart: unless-stopped
 
     volumes:
-      # 保存 Chroma 向量数据库，容器重建后数据不会丢失。
       - chroma_data:/app/.chroma_db
-
-      # 保存 Chroma 等组件首次下载的模型缓存。
       - model_cache:/home/appuser/.cache
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        BACKEND_BASE_URL: http://backend:8000
+
+    environment:
+      BACKEND_BASE_URL: http://backend:8000
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    init: true
+    restart: unless-stopped
+
 
 volumes:
   chroma_data:

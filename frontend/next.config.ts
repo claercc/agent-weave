@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // standalone 会让 Next.js 构建出一个适合放进 Docker 的精简服务，不需要把完整的 node_modules 搬进最终镜像
+  output: "standalone",
 };
 
 export default nextConfig;
