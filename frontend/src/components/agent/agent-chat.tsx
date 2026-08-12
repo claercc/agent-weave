@@ -120,7 +120,7 @@ const {
             <div>
               <CardTitle className="flex items-center gap-2 text-xl">
                 <Bot className="size-5" />
-                AI Agent Backend
+                AgentWeave
               </CardTitle>
 
               <CardDescription className="mt-1">

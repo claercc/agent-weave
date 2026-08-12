@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Agent 工作台",
-  description: "支持 RAG、工具调用和人工审批的 AI Agent 演示界面",
+  title: "AgentWeave",
+  description: "支持 RAG、工具调用和人工审批的 AgentWeave 智能体平台",
 };
 
 export default function RootLayout({
