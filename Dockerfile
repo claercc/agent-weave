@@ -28,6 +28,7 @@ RUN useradd \
 COPY requirements-linux.lock ./requirements.lock
 
 RUN python -m pip install \
+    --index-url https://pypi.org/simple \
     --require-hashes \
     --requirement requirements.lock
 
