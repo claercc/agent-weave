@@ -14,7 +14,11 @@ WORKDIR /app
 # onnxruntime 执行 OCR 时可能需要 OpenMP 运行库。
 # 安装 Linux 系统依赖
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends libgomp1 \
+    && apt-get install --yes --no-install-recommends \
+        libgomp1 \
+        libgl1 \
+        libglib2.0-0 \
+        libxcb1 \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户，降低容器运行权限。
