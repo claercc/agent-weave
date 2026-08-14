@@ -43,6 +43,7 @@ jobs:
           uv pip compile pyproject.toml \
             --python-platform linux \
             --python-version 3.13 \
+            --torch-backend cpu \
             --generate-hashes \
             --output-file requirements-linux.lock
 
@@ -50,6 +51,7 @@ jobs:
             --extra dev \
             --python-platform linux \
             --python-version 3.13 \
+            --torch-backend cpu \
             --generate-hashes \
             --output-file requirements-dev-linux.lock
 
