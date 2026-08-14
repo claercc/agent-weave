@@ -8,7 +8,7 @@ services:
       - .env
 
     ports:
-      - "8000:8000"
+      - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
 
     init: true
     restart: unless-stopped
@@ -26,9 +26,11 @@ services:
 
     environment:
       BACKEND_BASE_URL: http://backend:8000
+      DEMO_USERNAME: ${DEMO_USERNAME:-}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
 
     ports:
-      - "3000:3000"
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000"
 
     depends_on:
       backend:
