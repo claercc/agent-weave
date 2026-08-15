@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from app.core.config import get_settings
 from app.core.container import (
-    build_agent_service,
+    build_application_services,
 )
 from app.services.tool_service import init_tools
 
@@ -35,10 +35,13 @@ async def lifespan(
     init_tools()
 
     # Workflow 只在应用启动时编译一次。
-    application.state.agent_service = build_agent_service(settings)
+    services = build_application_services(settings)
+    application.state.agent_service = services.agent_service
+    application.state.rag_service = services.rag_service
 
     yield
 
     # 当前服务没有必须手动关闭的网络连接。
     # 清除引用可以明确表示应用生命周期已经结束。
     application.state.agent_service = None
+    application.state.rag_service = None

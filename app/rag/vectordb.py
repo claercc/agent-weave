@@ -1,3 +1,5 @@
+import hashlib
+import re
 from typing import Any, cast
 from uuid import uuid4
 
@@ -9,6 +11,8 @@ from app.core.exceptions import CollectionNotFoundError
 
 class VectorDBService:
     """只负责向量存储和相似度查询。"""
+
+    _VALID_STORAGE_NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$")
 
     def __init__(
         self,
@@ -29,8 +33,10 @@ class VectorDBService:
     ) -> chromadb.Collection:
         """获取或创建使用 cosine 距离的集合。"""
 
+        storage_name = self._to_storage_name(collection_name)
+
         collection = self._client.get_or_create_collection(
-            name=collection_name,
+            name=storage_name,
             embedding_function=None,
             configuration=cast(
                 Any,
@@ -42,6 +48,7 @@ class VectorDBService:
             ),
             metadata={
                 "embedding_model": embedding_model,
+                "display_name": collection_name,
             },
         )
 
@@ -98,8 +105,10 @@ class VectorDBService:
         """使用显式查询向量搜索文档。"""
 
         try:
+            storage_name = self._to_storage_name(collection_name)
+
             collection = self._client.get_collection(
-                name=collection_name,
+                name=storage_name,
                 embedding_function=None,
             )
         except chromadb.errors.NotFoundError as exc:
@@ -144,11 +153,35 @@ class VectorDBService:
         """删除知识库集合。"""
 
         try:
-            self._client.delete_collection(name=collection_name)
+            self._client.delete_collection(name=self._to_storage_name(collection_name))
         except chromadb.errors.NotFoundError as exc:
             raise CollectionNotFoundError(f"知识库 {collection_name} 不存在。") from exc
 
     def list_collections(self) -> list[str]:
         """列出所有知识库集合。"""
 
-        return [collection.name for collection in self._client.list_collections()]
+        display_names: list[str] = []
+
+        for collection in self._client.list_collections():
+            metadata = collection.metadata or {}
+            display_name = metadata.get("display_name")
+
+            if isinstance(display_name, str) and display_name:
+                display_names.append(display_name)
+            else:
+                # 兼容升级前创建的英文知识库。
+                display_names.append(collection.name)
+
+        return display_names
+
+    @classmethod
+    def _to_storage_name(cls, collection_name: str) -> str:
+        """将用户可见名称转换为符合 Chroma 规则的稳定内部名称。"""
+
+        if 3 <= len(collection_name) <= 512 and cls._VALID_STORAGE_NAME.fullmatch(
+            collection_name
+        ):
+            return collection_name
+
+        digest = hashlib.sha256(collection_name.encode("utf-8")).hexdigest()
+        return f"kb-{digest}"

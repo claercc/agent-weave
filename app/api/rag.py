@@ -4,13 +4,11 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
 )
 from anyio import to_thread
-from openai import OpenAI
 from app.core.exceptions import CollectionNotFoundError
-from app.core.config import Settings, get_settings
-from app.core.openai_client import get_openai_client
 from app.services.rag_service import RAGService
 from app.schemas.request import RAGQueryRequest, RAGIngestRequest
 from app.schemas.response import RAGResponse, PDFInfoResponse
@@ -21,11 +19,19 @@ router = APIRouter(prefix="/rag", tags=["RAG"])
 MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024
 
 
-def get_rag_service(
-    settings: Settings = Depends(get_settings),
-    client: OpenAI = Depends(get_openai_client),
-) -> RAGService:
-    return RAGService(settings=settings, client=client)
+async def get_rag_service(request: Request) -> RAGService:
+    """从应用状态获取生命周期内共享的 RAGService。"""
+
+    rag_service = getattr(
+        request.app.state,
+        "rag_service",
+        None,
+    )
+
+    if not isinstance(rag_service, RAGService):
+        raise RuntimeError("RAGService 尚未初始化，请确认 FastAPI lifespan 已正常执行")
+
+    return rag_service
 
 
 @router.post("/query", response_model=RAGResponse)

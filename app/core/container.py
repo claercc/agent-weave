@@ -1,7 +1,9 @@
 import logging
+from dataclasses import dataclass
 
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
+from openai import OpenAI
 
 from app.core.config import Settings
 from app.graph.workflow import (
@@ -11,6 +13,7 @@ from app.rag.embedding import EmbeddingService
 from app.rag.retriever import Retriever
 from app.rag.vectordb import VectorDBService
 from app.services.agent_service import AgentService
+from app.services.rag_service import RAGService
 from app.services.tool_service import (
     get_tool_service,
 )
@@ -18,8 +21,19 @@ from app.services.tool_service import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ApplicationServices:
+    """应用生命周期内共享的服务。"""
+
+    agent_service: AgentService
+    rag_service: RAGService
+
+
 def build_agent_service(
     settings: Settings,
+    *,
+    embedding_service: EmbeddingService | None = None,
+    vector_db_service: VectorDBService | None = None,
 ) -> AgentService:
     """创建应用级 AgentService。
 
@@ -50,16 +64,16 @@ def build_agent_service(
 
     # EmbeddingService 内部使用缓存加载 BGE 模型。
     # 此处创建服务不会立即执行模型推理。
-    embedding_service = EmbeddingService(settings)
+    effective_embedding_service = embedding_service or EmbeddingService(settings)
 
     # VectorDBService 创建 Chroma 本地客户端。
-    vector_db_service = VectorDBService()
+    effective_vector_db_service = vector_db_service or VectorDBService()
 
     # Retriever 统一负责：
     # 查询向量化 → Chroma 检索。
     retriever = Retriever(
-        vector_db_service,
-        embedding_service,
+        effective_vector_db_service,
+        effective_embedding_service,
     )
 
     # 当前使用内存 Checkpointer。
@@ -79,7 +93,41 @@ def build_agent_service(
     logger.info(
         "Agent Workflow 初始化完成，模型：%s，" "Embedding：%s",
         settings.model_name,
-        embedding_service.model_name,
+        effective_embedding_service.model_name,
     )
 
     return AgentService(workflow)
+
+
+def build_application_services(
+    settings: Settings,
+) -> ApplicationServices:
+    """构建共享 Embedding 和 Chroma 客户端的应用服务。"""
+
+    embedding_service = EmbeddingService(settings)
+    vector_db_service = VectorDBService()
+
+    agent_service = build_agent_service(
+        settings,
+        embedding_service=embedding_service,
+        vector_db_service=vector_db_service,
+    )
+
+    model_client = OpenAI(
+        api_key=settings.require_openai_api_key().get_secret_value(),
+        base_url=settings.openai_api_base,
+        timeout=settings.model_request_timeout_seconds,
+        max_retries=settings.model_max_retries,
+    )
+
+    rag_service = RAGService(
+        client=model_client,
+        settings=settings,
+        embedding_service=embedding_service,
+        vector_db_service=vector_db_service,
+    )
+
+    return ApplicationServices(
+        agent_service=agent_service,
+        rag_service=rag_service,
+    )

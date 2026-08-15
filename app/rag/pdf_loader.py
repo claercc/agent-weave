@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+from threading import Lock
 
 import pymupdf
 from langchain_core.documents import Document
@@ -18,7 +19,8 @@ class PdfDocumentLoader:
         ocr_dpi: int = 200,
         max_pages: int = 100,
     ):
-        self._ocr_service = ocr_service or get_ocr_service()
+        self._ocr_service = ocr_service
+        self._ocr_lock = Lock()
         self._ocr_dpi = ocr_dpi
         self._max_pages = max_pages
 
@@ -107,8 +109,13 @@ class PdfDocumentLoader:
 
             image_content = pixmap.tobytes("png")
 
-            ocr_service = self._ocr_service or get_ocr_service()
+            # RapidOCR/ONNX 延迟到真正遇到图片页时初始化。
+            # 同一个 loader 的 OCR 推理串行执行，避免并发初始化
+            # 或共享 ONNX session 时发生资源竞争。
+            with self._ocr_lock:
+                if self._ocr_service is None:
+                    self._ocr_service = get_ocr_service()
 
-            return ocr_service.extract_text(image_content).strip()
+                return self._ocr_service.extract_text(image_content).strip()
         except Exception as exc:
             raise ValueError(f"第 {page_index + 1} 页 OCR 识别失败: {exc}") from exc

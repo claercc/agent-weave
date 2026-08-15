@@ -6,6 +6,15 @@ import pytest
 from app.rag.pdf_loader import PdfDocumentLoader
 
 
+@patch("app.rag.pdf_loader.get_ocr_service")
+def test_loader_does_not_initialize_ocr_until_needed(
+    mock_get_ocr_service: Mock,
+) -> None:
+    PdfDocumentLoader()
+
+    mock_get_ocr_service.assert_not_called()
+
+
 @patch("app.rag.pdf_loader.PdfReader")
 def test_load_extracts_text_and_page_metadata(
     mock_pdf_reader: Mock,

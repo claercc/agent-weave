@@ -9,6 +9,7 @@ def create_test_client(*, ready: bool = False) -> TestClient:
     app.include_router(router, prefix="/api")
     if ready:
         app.state.agent_service = object()
+        app.state.rag_service = object()
     return TestClient(app)
 
 

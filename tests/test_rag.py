@@ -1,4 +1,5 @@
 from unittest.mock import Mock
+from threading import Lock
 
 from app.services.rag_service import RAGService
 from langchain_core.documents import Document
@@ -58,6 +59,7 @@ def test_ingest_pdf_parses_chunks_and_stores_documents() -> None:
     rag_service._chunk_service = Mock()
     rag_service._embedding_service = Mock()
     rag_service._vector_db_service = Mock()
+    rag_service._ingest_lock = Lock()
     rag_service._embedding_service.model_name = "test-embedding"
     rag_service._embedding_service.embed_documents.return_value = [[0.1, 0.2]]
 
