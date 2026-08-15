@@ -12,7 +12,9 @@ REQUEST_ANALYSIS_PROMPT = """
 需要根据用户选择的私有知识库回答问题。
 
 3. information_tool
-需要使用计算器、天气、时间等只读工具获取信息。
+需要使用计算器、天气、时间、互联网搜索等只读工具获取信息。
+新闻、实时事件、最新版本、近期发布信息、政策变化，
+以及明确要求联网搜索的问题，都属于 information_tool。
 
 4. action
 需要执行会产生外部副作用的操作，例如创建工单。
@@ -23,6 +25,15 @@ REQUEST_ANALYSIS_PROMPT = """
 - knowledge_query 使用 rag
 - information_tool 使用 agent
 - action 使用 agent
+
+联网搜索规则：
+
+- 用户询问今天、最近、最新、当前发生的公开信息时，
+  使用 information_tool。
+- 用户明确要求搜索互联网、查找网页或核实最新信息时，
+  使用 information_tool。
+- 稳定的基础知识和普通概念解释不应强制联网搜索。
+- 私有知识库问题仍然使用 knowledge_query，不能用互联网搜索替代。
 
 澄清规则：
 

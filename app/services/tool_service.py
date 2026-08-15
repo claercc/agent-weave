@@ -155,8 +155,10 @@ def init_tools() -> None:
     from app.tools.calculator import CalculatorTool
     from app.tools.support_ticket import CreateSupportTicketTool
     from app.tools.time import TimeTool
+    from app.tools.web_search import WebSearchTool
 
     register_tool(WeatherTool())
     register_tool(CalculatorTool())
     register_tool(TimeTool())
     register_tool(CreateSupportTicketTool())
+    register_tool(WebSearchTool())

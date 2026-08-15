@@ -70,6 +70,12 @@ class Settings(BaseSettings):
         description="OpenWeatherMap API密钥",
     )
 
+    tavily_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="TAVILY_API_KEY",
+        description="Tavily 搜索 API 密钥",
+    )
+
     embedding_model: str = Field(
         default="BAAI/bge-small-zh-v1.5",
         validation_alias="EMBEDDING_MODEL",
@@ -87,6 +93,14 @@ class Settings(BaseSettings):
         if self.openweather_api_key is None:
             raise RuntimeError("OPENWEATHER_API_KEY is required for weather requests.")
         return self.openweather_api_key
+
+    def require_tavily_api_key(self) -> SecretStr:
+        """返回 Tavily API 密钥，或抛出运行时错误。"""
+
+        if self.tavily_api_key is None:
+            raise RuntimeError("TAVILY_API_KEY is required for web search requests.")
+
+        return self.tavily_api_key
 
 
 @lru_cache

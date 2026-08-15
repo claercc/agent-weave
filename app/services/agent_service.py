@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
+import json
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from langchain_core.messages import (
     AIMessage,
@@ -426,24 +428,44 @@ class AgentService:
                         ):
                             tool_name = graph_message.name or "unknown"
 
+                            content = self._message_content_to_text(
+                                graph_message.content
+                            )
+
+                            search_results: dict[str, Any] | None = None
+
+                            if node_name == "tools" and tool_name == "web_search":
+                                search_results = self._parse_search_results(content)
+
                             # 只有 ToolNode 的 ToolMessage 才代表
                             # 工具确实执行过。审批拒绝产生的
                             # ToolMessage 不计入 used_tools。
                             if node_name == "tools" and tool_name not in used_tools:
                                 used_tools.append(tool_name)
 
+                            displayed_content = content
+
+                            if search_results is not None:
+                                displayed_content = (
+                                    "搜索返回 "
+                                    f"{len(search_results['items'])} "
+                                    "条结果"
+                                )
+
                             yield encode_sse(
                                 "tool_result",
                                 {
                                     "name": tool_name,
-                                    "content": (
-                                        self._message_content_to_text(
-                                            graph_message.content
-                                        )
-                                    ),
+                                    "content": displayed_content,
                                     "executed": (node_name == "tools"),
                                 },
                             )
+
+                            if search_results is not None:
+                                yield encode_sse(
+                                    "search_results",
+                                    search_results,
+                                )
 
                     if "citations" in update:
                         citations = update["citations"]
@@ -583,3 +605,80 @@ class AgentService:
                 return messages[index:]
 
         return messages
+
+    @staticmethod
+    def _parse_search_results(
+        content: str,
+    ) -> dict[str, Any] | None:
+        """从 web_search 工具输出中解析安全的来源数据。"""
+
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            return None
+
+        if not isinstance(payload, dict):
+            return None
+
+        query = payload.get("query")
+        raw_items = payload.get("items")
+
+        if not isinstance(query, str):
+            return None
+
+        if not isinstance(raw_items, list):
+            return None
+
+        items: list[dict[str, Any]] = []
+
+        for raw_item in raw_items[:5]:
+            if not isinstance(raw_item, dict):
+                continue
+
+            title = raw_item.get("title")
+            url = raw_item.get("url")
+            snippet = raw_item.get("snippet")
+            score_value = raw_item.get("score")
+            published_at = raw_item.get("published_at")
+
+            if not isinstance(title, str):
+                continue
+
+            if not isinstance(url, str):
+                continue
+
+            parsed_url = urlparse(url)
+
+            if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                continue
+
+            if not isinstance(snippet, str):
+                snippet = ""
+
+            if isinstance(score_value, (int, float)) and not isinstance(
+                score_value, bool
+            ):
+                score: float | None = max(
+                    0.0,
+                    min(1.0, float(score_value)),
+                )
+            else:
+                score = None
+
+            if not isinstance(published_at, str):
+                published_at = None
+
+            items.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "snippet": snippet,
+                    "score": score,
+                    "published_at": published_at,
+                }
+            )
+
+        return {
+            "query": query,
+            "items": items,
+        }

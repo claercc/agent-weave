@@ -15,6 +15,7 @@ const AGENT_EVENT_TYPES = new Set<AgentStreamEvent["type"]>([
   "token",
   "tool_call",
   "tool_result",
+  "search_results",
   "approval_required",
   "approval_resolved",
   "citations",

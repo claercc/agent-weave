@@ -91,6 +91,19 @@ export interface ToolResultEventData {
   executed: boolean;
 }
 
+export interface SearchResultItem {
+  title: string;
+  url: string;
+  snippet: string;
+  score: number | null;
+  published_at: string | null;
+}
+
+export interface SearchResultsEventData {
+  query: string;
+  items: SearchResultItem[];
+}
+
 export interface ApprovalRequiredEventData {
   type: "tool_approval";
   session_id: string;
@@ -144,6 +157,10 @@ export type AgentStreamEvent =
   | { type: "token"; data: TokenEventData }
   | { type: "tool_call"; data: ToolCallEventData }
   | { type: "tool_result"; data: ToolResultEventData }
+  | {
+      type: "search_results";
+      data: SearchResultsEventData;
+    }
   | {
       type: "approval_required";
       data: ApprovalRequiredEventData;

@@ -3,6 +3,7 @@ import {
   Bot,
   CheckCircle2,
   CirclePlay,
+  ExternalLink,
   GitBranch,
   LoaderCircle,
   ShieldAlert,
@@ -323,6 +324,74 @@ function TraceEvent({ event }: { event: AgentStreamEvent }) {
             <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
               {event.data.content}
             </p>
+          </div>
+        </div>
+      );
+
+    case "search_results":
+      return (
+        <div className="flex gap-3">
+          <Search className="mt-0.5 size-4 shrink-0 text-cyan-500" />
+
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">
+              互联网搜索完成
+            </p>
+
+            <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+              搜索词：{event.data.query}
+            </p>
+
+            {event.data.items.length === 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                没有找到可用的搜索结果
+              </p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {event.data.items.map((item, index) => (
+                  <a
+                    key={`${item.url}-${index}`}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-xl border bg-background p-3 transition-colors hover:bg-muted/50"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="line-clamp-2 text-xs font-medium leading-5">
+                        {item.title}
+                      </p>
+
+                      <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                    </div>
+
+                    <p className="mt-1 truncate text-[11px] text-cyan-700">
+                      {item.url}
+                    </p>
+
+                    {item.snippet && (
+                      <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground">
+                        {item.snippet}
+                      </p>
+                    )}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {item.score !== null && (
+                        <Badge variant="secondary">
+                          相关度{" "}
+                          {(item.score * 100).toFixed(0)}%
+                        </Badge>
+                      )}
+
+                      {item.published_at && (
+                        <span className="text-[11px] text-muted-foreground">
+                          {item.published_at}
+                        </span>
+                      )}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       );
