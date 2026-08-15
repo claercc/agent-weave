@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   Square,
   Trash2,
+  TriangleAlert,
   User,
 } from "lucide-react";
 
@@ -234,15 +235,33 @@ const {
                             )}
                         >
                             {message.content ? (
-                            <p className="whitespace-pre-wrap">
-                                {message.content}
-                            </p>
+                            <>
+                              <p className="whitespace-pre-wrap">
+                                  {message.content}
+                              </p>
+                              {message.status === "stopped" && (
+                                <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Square className="size-3" />
+                                  已停止生成
+                                </p>
+                              )}
+                            </>
                             ) : (
                             <div className="flex items-center gap-2 text-muted-foreground">
                               {pendingApproval ? (
                                 <>
                                   <ShieldAlert className="size-4" />
                                   等待操作授权
+                                </>
+                              ) : message.status === "stopped" ? (
+                                <>
+                                  <Square className="size-4" />
+                                  已停止生成
+                                </>
+                              ) : message.status === "error" ? (
+                                <>
+                                  <TriangleAlert className="size-4" />
+                                  生成失败
                                 </>
                               ) : (
                                 <>

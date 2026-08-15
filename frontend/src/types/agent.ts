@@ -122,6 +122,10 @@ export interface ErrorEventData {
   message: string;
 }
 
+export interface StoppedEventData {
+  reason: "user";
+}
+
 export type AgentStreamEvent =
   | { type: "start"; data: StartEventData }
   | {
@@ -150,4 +154,5 @@ export type AgentStreamEvent =
     }
   | { type: "citations"; data: CitationsEventData }
   | { type: "done"; data: DoneEventData }
-  | { type: "error"; data: ErrorEventData };
+  | { type: "error"; data: ErrorEventData }
+  | { type: "stopped"; data: StoppedEventData };

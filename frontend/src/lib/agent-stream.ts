@@ -20,6 +20,7 @@ const AGENT_EVENT_TYPES = new Set<AgentStreamEvent["type"]>([
   "citations",
   "done",
   "error",
+  "stopped",
 ]);
 
 interface ParsedSseBlock {

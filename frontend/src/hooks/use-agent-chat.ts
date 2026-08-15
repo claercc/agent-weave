@@ -18,6 +18,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  status?: "streaming" | "complete" | "stopped" | "error";
 }
 
 function isAbortError(error: unknown): boolean {
@@ -85,6 +86,7 @@ export function useAgentChat() {
     (
       assistantMessageId: string,
       update: (content: string) => string,
+      status?: ChatMessage["status"],
     ) => {
       setMessages((currentMessages) =>
         currentMessages.map((message) =>
@@ -92,6 +94,7 @@ export function useAgentChat() {
             ? {
                 ...message,
                 content: update(message.content),
+                ...(status ? { status } : {}),
               }
             : message,
         ),
@@ -162,6 +165,7 @@ export function useAgentChat() {
           updateAssistantMessage(
             assistantMessageId,
             () => event.data.answer,
+            "complete",
           );
 
           activeAssistantMessageIdRef.current = null;
@@ -169,6 +173,14 @@ export function useAgentChat() {
 
         case "error":
           setError(event.data.message);
+          updateAssistantMessage(
+            assistantMessageId,
+            (currentContent) => currentContent,
+            "error",
+          );
+          break;
+
+        case "stopped":
           break;
       }
     },
@@ -206,6 +218,7 @@ export function useAgentChat() {
           id: assistantMessageId,
           role: "assistant",
           content: "",
+          status: "streaming",
         },
       ]);
 
@@ -235,6 +248,11 @@ export function useAgentChat() {
         );
       } catch (requestError) {
         if (!isAbortError(requestError)) {
+          updateAssistantMessage(
+            assistantMessageId,
+            (currentContent) => currentContent,
+            "error",
+          );
           setError(
             requestError instanceof Error
               ? requestError.message
@@ -242,11 +260,13 @@ export function useAgentChat() {
           );
         }
       } finally {
-        abortControllerRef.current = null;
-        setIsStreaming(false);
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+          setIsStreaming(false);
+        }
       }
     },
-    [handleStreamEvent, pendingApproval],
+    [handleStreamEvent, pendingApproval, updateAssistantMessage],
   );
 
   const resolveApproval = useCallback(
@@ -268,6 +288,11 @@ export function useAgentChat() {
       abortControllerRef.current = abortController;
       setError("");
       setIsStreaming(true);
+      updateAssistantMessage(
+        assistantMessageId,
+        (currentContent) => currentContent,
+        "streaming",
+      );
 
       try {
         await resumeAgentChat(
@@ -286,6 +311,11 @@ export function useAgentChat() {
         );
       } catch (requestError) {
         if (!isAbortError(requestError)) {
+          updateAssistantMessage(
+            assistantMessageId,
+            (currentContent) => currentContent,
+            "error",
+          );
           setError(
             requestError instanceof Error
               ? requestError.message
@@ -293,18 +323,40 @@ export function useAgentChat() {
           );
         }
       } finally {
-        abortControllerRef.current = null;
-        setIsStreaming(false);
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+          setIsStreaming(false);
+        }
       }
     },
-    [handleStreamEvent, pendingApproval],
+    [handleStreamEvent, pendingApproval, updateAssistantMessage],
   );
 
   const stopStreaming = useCallback(() => {
-    abortControllerRef.current?.abort();
+    const abortController = abortControllerRef.current;
+    const assistantMessageId =
+      activeAssistantMessageIdRef.current;
+
+    if (!abortController || !assistantMessageId) {
+      return;
+    }
+
+    abortController.abort();
     abortControllerRef.current = null;
+    activeAssistantMessageIdRef.current = null;
+
+    updateAssistantMessage(
+      assistantMessageId,
+      (currentContent) => currentContent,
+      "stopped",
+    );
+    setEvents((currentEvents) => [
+      ...currentEvents,
+      { type: "stopped", data: { reason: "user" } },
+    ]);
+    setPendingApproval(null);
     setIsStreaming(false);
-  }, []);
+  }, [updateAssistantMessage]);
 
   const clearChat = useCallback(() => {
     abortControllerRef.current?.abort();

@@ -11,6 +11,7 @@ import {
   BrainCircuit,
   ListFilter,
   Search,
+  Square,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -362,6 +363,19 @@ function TraceEvent({ event }: { event: AgentStreamEvent }) {
             </p>
             <p className="text-xs text-destructive">
               {event.data.message}
+            </p>
+          </div>
+        </div>
+      );
+
+    case "stopped":
+      return (
+        <div className="flex gap-3">
+          <Square className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div>
+            <p className="text-sm font-medium">执行已停止</p>
+            <p className="text-xs text-muted-foreground">
+              用户停止了本次生成
             </p>
           </div>
         </div>
