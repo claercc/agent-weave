@@ -1,7 +1,9 @@
 from langchain.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_openai import ChatOpenAI
 
+from app.core.config import get_settings
 from app.domain.message import Message, MessageRole
 from app.domain.routing import (
     RequestIntent,
@@ -374,7 +376,16 @@ async def agent_node(
     tools: list[BaseTool],
 ) -> dict[str, list[AIMessage]]:
     """向模型询问下一个响应或工具调用"""
-    messages = [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
+    messages = trim_messages(
+        [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]],
+        strategy="last",
+        token_counter=count_tokens_approximately,
+        max_tokens=get_settings().agent_context_max_input_tokens,
+        start_on="human",
+        end_on=("human", "tool"),
+        include_system=True,
+        allow_partial=False,
+    )
     model = llm.bind_tools(tools) if tools else llm
     response = await model.ainvoke(messages)
     return {"messages": [response]}

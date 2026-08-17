@@ -64,6 +64,27 @@ class Settings(BaseSettings):
         description="模型 API 可重试次数",
     )
 
+    agent_context_max_input_tokens: int = Field(
+        default=12000,
+        validation_alias="AGENT_CONTEXT_MAX_INPUT_TOKENS",
+        ge=1024,
+        description="Agent 单次模型调用允许使用的最大输入 token 数",
+    )
+
+    agent_session_ttl_seconds: int = Field(
+        default=86400,
+        validation_alias="AGENT_SESSION_TTL_SECONDS",
+        ge=60,
+        description="Agent 会话空闲后在内存中保留的秒数",
+    )
+
+    agent_session_sweep_interval_seconds: int = Field(
+        default=300,
+        validation_alias="AGENT_SESSION_SWEEP_INTERVAL_SECONDS",
+        ge=10,
+        description="过期 Agent 会话清理任务的执行间隔秒数",
+    )
+
     openweather_api_key: SecretStr | None = Field(
         default=None,
         validation_alias="OPENWEATHER_API_KEY",

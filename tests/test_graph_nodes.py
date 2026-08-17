@@ -7,11 +7,12 @@ from app.graph.nodes import _get_langchain_tools
 from app.services.tool_service import ToolService
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages.utils import count_tokens_approximately
 
 from app.domain.message import Message, MessageRole
 from app.graph.nodes import _convert_to_langchain_messages
 from app.prompts.system import SYSTEM_PROMPT
-from app.graph.nodes import route_after_agent
+from app.graph.nodes import agent_node, route_after_agent
 from langchain_core.messages import ToolMessage
 from langgraph.prebuilt import ToolNode
 
@@ -85,6 +86,39 @@ def test_convert_domain_messages_to_langchain_messages():
 
     assert isinstance(result[2], AIMessage)
     assert result[2].content == "hi"
+
+
+@pytest.mark.anyio
+async def test_agent_node_trims_old_messages_to_input_token_limit(monkeypatch):
+    llm = Mock(spec=ChatOpenAI)
+    llm.ainvoke = AsyncMock(return_value=AIMessage(content="latest answer"))
+    token_limit = 180
+    monkeypatch.setattr(
+        "app.graph.nodes.get_settings",
+        lambda: Mock(agent_context_max_input_tokens=token_limit),
+    )
+    messages = [
+        (
+            HumanMessage(content=f"old question {index} " + "x" * 200)
+            if index % 2 == 0
+            else AIMessage(content=f"old answer {index} " + "y" * 200)
+        )
+        for index in range(8)
+    ]
+    messages.append(HumanMessage(content="latest question"))
+
+    await agent_node(
+        {"session_id": "session-001", "messages": messages},
+        llm=llm,
+        tools=[],
+    )
+
+    model_messages = llm.ainvoke.await_args.args[0]
+    assert count_tokens_approximately(model_messages) <= token_limit
+    assert model_messages[-1].content == "latest question"
+    assert all(
+        "old question 0" not in str(message.content) for message in model_messages
+    )
 
 
 def test_route_after_agent_ends_when_model_returns_final_answer():
