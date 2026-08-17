@@ -37,6 +37,18 @@ RUN python -m pip install \
     --require-hashes \
     --requirement requirements.lock
 
+# 在构建镜像时下载嵌入模型。运行时容器使用
+ARG EMBEDDING_MODEL_SOURCE=BAAI/bge-small-zh-v1.5
+
+RUN HF_HOME=/opt/huggingface python -c \
+    "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL_SOURCE}')" \
+    && chmod -R a+rX /opt/huggingface
+
+ENV EMBEDDING_MODEL=${EMBEDDING_MODEL_SOURCE} \
+    HF_HOME=/opt/huggingface \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
+
 # 复制项目安装所需文件。
 COPY pyproject.toml README.md main.py ./
 COPY app ./app

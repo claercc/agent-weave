@@ -187,10 +187,14 @@ const {
           </div>
         </CardHeader>
 
-        <CardContent className="grid min-h-0 flex-1 grid-cols-1 p-0 lg:grid-cols-[minmax(0,1fr)_24rem]">
-            <section className="flex min-h-0 flex-col">
-                <ScrollArea className="min-h-0 flex-1">
-                    <div className="space-y-6 p-4 md:p-6">
+        <CardContent className="grid min-h-0 min-w-0 flex-1 grid-cols-1 p-0 lg:grid-cols-[minmax(0,1fr)_24rem]">
+            <section className="flex min-h-0 min-w-0 flex-col">
+                <ScrollArea
+                  horizontal
+                  type="auto"
+                  className="min-h-0 min-w-0 flex-1"
+                >
+                    <div className="min-w-0 space-y-6 p-4 md:p-6">
                     {messages.length === 0 && (
                         <div className="flex min-h-80 flex-col items-center justify-center text-center">
                         <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
@@ -228,7 +232,7 @@ const {
 
                         <div
                             className={cn(
-                            "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6",
+                            "min-w-0 max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6",
                             message.role === "user"
                                 ? "bg-primary text-primary-foreground"
                                 : "bg-muted",
@@ -236,7 +240,7 @@ const {
                         >
                             {message.content ? (
                             <>
-                              <p className="whitespace-pre-wrap">
+                              <p className="break-words whitespace-pre-wrap">
                                   {message.content}
                               </p>
                               {message.status === "stopped" && (
