@@ -179,12 +179,32 @@ class AgentService:
             stream = self._workflow.astream(
                 input_value,
                 config=self._build_config(session_id),
+                # updates 表示某个节点执行完成后，对状态做了哪些修改
+                # messages 表示大模型正在生成的消息片段
                 stream_mode=["updates", "messages"],
                 subgraphs=True,
             )
 
+            # namespace 为空表示主图，否则表示子图。
+            # stream_mode 这是什么类型的数据。
+            # chunk 具体内容。
             async for namespace, stream_mode, chunk in stream:
                 if stream_mode == "messages":
+                    # stream_mode == "messages" 时，chunk 是是一个二元组
+                    # 结构大致如下
+                    #     ("tool_agent:abc123",),    # namespace
+                    #     "messages",                # stream_mode
+                    #     (
+                    #         AIMessageChunk(
+                    #             content="你"
+                    #         ),
+                    #         {
+                    #             "langgraph_node": "agent",
+                    #             "langgraph_step": 3,
+                    #             ...
+                    #         },
+                    #     ),
+                    # )
                     message_chunk, metadata = chunk
                     node_name = metadata.get("langgraph_node")
 
@@ -206,9 +226,14 @@ class AgentService:
                     content = message_chunk.content
 
                     # 某些 OpenAI 兼容模型会先把工具调用作为 DSML 文本
-                    # 流出，随后才由 agent_node 规范为结构化 tool_calls。
-                    # Agent 节点统一等 updates 事件后再输出，避免内部协议泄漏。
-                    if node_name != "agent" and isinstance(content, str) and content:
+                    # 流出，随后才由 agent_node 规范。chat 节点虽然不绑定
+                    # 工具，模型仍可能误生成该协议，因此两个节点都统一等
+                    # updates 事件后再输出，避免内部协议泄漏。
+                    if (
+                        node_name not in {"agent", "chat"}
+                        and isinstance(content, str)
+                        and content
+                    ):
                         yield encode_sse(
                             "token",
                             {
@@ -425,7 +450,7 @@ class AgentService:
                                 if answer:
                                     final_answer = answer
 
-                                    if node_name == "agent":
+                                    if node_name in {"agent", "chat"}:
                                         yield encode_sse(
                                             "token",
                                             {

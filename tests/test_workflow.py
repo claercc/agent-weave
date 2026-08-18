@@ -5,6 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
+from app.graph.nodes import _normalize_tool_call_response, agent_node
 from app.graph.workflow import create_agent_workflow
 from app.models.output_model import ToolCallResult
 from app.models.routing import RequestAnalysis
@@ -13,6 +14,42 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from app.services.agent_service import AgentService
 from app.rag.retriever import Retriever
+
+
+def test_dsml_is_not_exposed_when_no_tools_are_available() -> None:
+    response = AIMessage(
+        content=(
+            "<｜｜DSML｜｜tool_calls>"
+            '<｜｜DSML｜｜invoke name="web_search">'
+            '<｜｜DSML｜｜parameter name="query" string="true">test'
+            "</｜｜DSML｜｜parameter>"
+            "</｜｜DSML｜｜invoke>"
+            "</｜｜DSML｜｜tool_calls>"
+        )
+    )
+
+    normalized = _normalize_tool_call_response(response, tools=[])
+
+    assert "DSML" not in normalized.content
+    assert "未执行任何工具" in normalized.content
+    assert normalized.tool_calls == []
+
+
+@pytest.mark.anyio
+async def test_agent_node_forbids_protocol_output_without_tools() -> None:
+    llm = Mock(spec=ChatOpenAI)
+    llm.ainvoke = AsyncMock(return_value=AIMessage(content="direct answer"))
+
+    result = await agent_node(
+        {"messages": [HumanMessage(content="answer directly")]},
+        llm=llm,
+        tools=[],
+    )
+
+    invoked_messages = llm.ainvoke.await_args.args[0]
+    assert "没有提供任何可调用的工具" in invoked_messages[0].content
+    assert "不要输出 DSML" in invoked_messages[0].content
+    assert result["messages"][0].content == "direct answer"
 
 
 @pytest.mark.anyio
@@ -157,6 +194,63 @@ async def test_agent_workflow_converts_dsml_content_to_tool_call() -> None:
     tool_service.call_tool_async.assert_awaited_once_with(
         "web_search",
         query="白人性魅力 含义 王水牛 洋滤镜",
+    )
+
+
+@pytest.mark.anyio
+async def test_agent_workflow_accepts_canonical_single_bar_dsml() -> None:
+    tool_service = Mock(spec=ToolService)
+    tool_service.list_tools.return_value = [
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                },
+            },
+        }
+    ]
+    tool_service.call_tool_async.return_value = ToolCallResult.success_result(
+        tool_name="web_search",
+        data={"items": []},
+    )
+    tool_service.serialize_result.return_value = '{"items": []}'
+    tool_service.requires_approval.return_value = False
+
+    llm = Mock(spec=ChatOpenAI)
+    bound_model = Mock()
+    bound_model.ainvoke = AsyncMock(
+        side_effect=[
+            AIMessage(
+                content=(
+                    "<｜DSML｜tool_calls>"
+                    '<｜DSML｜invoke name="web_search">'
+                    '<｜DSML｜parameter name="query" string="true">test'
+                    "</｜DSML｜parameter>"
+                    "</｜DSML｜invoke>"
+                    "</｜DSML｜tool_calls>"
+                )
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    llm.bind_tools.return_value = bound_model
+
+    workflow = create_agent_workflow(llm, tool_service)
+    result = await workflow.ainvoke(
+        {
+            "session_id": "session-canonical-dsml",
+            "messages": [HumanMessage(content="test")],
+        }
+    )
+
+    assert result["messages"][-1].content == "done"
+    tool_service.call_tool_async.assert_awaited_once_with(
+        "web_search",
+        query="test",
     )
 
 

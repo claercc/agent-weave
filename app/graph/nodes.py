@@ -36,7 +36,7 @@ from langgraph.types import interrupt
 logger = logging.getLogger(__name__)
 
 
-_DSML_TAG = r"(?:｜｜|\|\|)DSML(?:｜｜|\|\|)"
+_DSML_TAG = r"(?:｜{1,2}|\|{1,2})DSML(?:｜{1,2}|\|{1,2})"
 _DSML_TOOL_CALLS_PATTERN = re.compile(
     rf"\s*<{_DSML_TAG}tool_calls>\s*(.*?)\s*</{_DSML_TAG}tool_calls>\s*",
     re.DOTALL,
@@ -51,6 +51,12 @@ _DSML_PARAMETER_PATTERN = re.compile(
     rf"(.*?)\s*</{_DSML_TAG}parameter>",
     re.DOTALL,
 )
+
+_NO_TOOLS_PROMPT = """
+本次对话没有提供任何可调用的工具。
+不要生成工具调用，也不要输出 DSML、XML 或其他内部协议标记。
+请仅根据已有对话直接回答用户；如果无法确定，就明确说明无法确定。
+""".strip()
 
 
 def _parse_dsml_tool_calls(
@@ -129,7 +135,7 @@ def _normalize_tool_call_response(
 ) -> AIMessage:
     """把 OpenAI 兼容服务返回的 DSML 文本规范为原生工具调用。"""
 
-    if response.tool_calls or not tools or not isinstance(response.content, str):
+    if response.tool_calls or not isinstance(response.content, str):
         return response
 
     parsed_tool_calls = _parse_dsml_tool_calls(
@@ -501,8 +507,13 @@ async def agent_node(
     tools: list[BaseTool],
 ) -> dict[str, list[AIMessage]]:
     """向模型询问下一个响应或工具调用"""
+    system_prompt = SYSTEM_PROMPT
+
+    if not tools:
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{_NO_TOOLS_PROMPT}"
+
     messages = trim_messages(
-        [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]],
+        [SystemMessage(content=system_prompt), *state["messages"]],
         strategy="last",
         token_counter=count_tokens_approximately,
         max_tokens=get_settings().agent_context_max_input_tokens,

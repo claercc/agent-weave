@@ -62,6 +62,25 @@ class FakeStreamingWorkflow:
         )
 
 
+class FakeChatStreamingWorkflow:
+    async def astream(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> AsyncIterator[Any]:
+        dsml = "<｜｜DSML｜｜tool_calls>internal protocol</｜｜DSML｜｜tool_calls>"
+        yield (
+            (),
+            "messages",
+            (AIMessageChunk(content=dsml), {"langgraph_node": "chat"}),
+        )
+        yield (
+            (),
+            "updates",
+            {"chat": {"messages": [AIMessage(content="直接回答")]}},
+        )
+
+
 @pytest.mark.anyio
 async def test_used_tools_only_contains_tools_from_current_turn() -> None:
     tool_call_message = AIMessage(
@@ -201,3 +220,25 @@ async def test_stream_does_not_expose_agent_protocol_content() -> None:
     assert '"name": "web_search"' in output
     assert "event: token" in output
     assert "最终回答" in output
+
+
+@pytest.mark.anyio
+async def test_stream_does_not_expose_chat_protocol_content() -> None:
+    agent_service = AgentService(FakeChatStreamingWorkflow())
+
+    events = [
+        event
+        async for event in agent_service._stream_workflow(
+            input_value={},
+            session_id="session-chat-dsml",
+            route="chat",
+            route_reason="test",
+            used_tools=[],
+            citations=[],
+        )
+    ]
+
+    output = "".join(events)
+    assert "internal protocol" not in output
+    assert "event: token" in output
+    assert "直接回答" in output
