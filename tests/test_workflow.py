@@ -97,6 +97,112 @@ async def test_agent_workflow_executes_tool_and_returns_final_answer():
 
 
 @pytest.mark.anyio
+async def test_agent_workflow_converts_dsml_content_to_tool_call() -> None:
+    tool_service = Mock(spec=ToolService)
+    tool_service.list_tools.return_value = [
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+        }
+    ]
+    tool_service.call_tool_async.return_value = ToolCallResult.success_result(
+        tool_name="web_search",
+        data={"items": []},
+    )
+    tool_service.serialize_result.return_value = '{"items": []}'
+    tool_service.requires_approval.return_value = False
+
+    llm = Mock(spec=ChatOpenAI)
+    bound_model = Mock()
+    bound_model.ainvoke = AsyncMock()
+    llm.bind_tools.return_value = bound_model
+    bound_model.ainvoke.side_effect = [
+        AIMessage(
+            content=(
+                "<｜｜DSML｜｜tool_calls>\n"
+                '<｜｜DSML｜｜invoke name="web_search">\n'
+                '<｜｜DSML｜｜parameter name="query" string="true">'
+                "白人性魅力 含义 王水牛 洋滤镜"
+                "</｜｜DSML｜｜parameter>\n"
+                "</｜｜DSML｜｜invoke>\n"
+                "</｜｜DSML｜｜tool_calls>"
+            )
+        ),
+        AIMessage(content="这里是搜索后的回答。"),
+    ]
+
+    workflow = create_agent_workflow(llm, tool_service)
+    result = await workflow.ainvoke(
+        {
+            "session_id": "session-dsml",
+            "messages": [HumanMessage(content="白人性魅力")],
+        }
+    )
+
+    tool_call_message = result["messages"][1]
+    assert tool_call_message.content == ""
+    assert tool_call_message.tool_calls[0]["name"] == "web_search"
+    assert tool_call_message.tool_calls[0]["args"] == {
+        "query": "白人性魅力 含义 王水牛 洋滤镜"
+    }
+    assert result["messages"][-1].content == "这里是搜索后的回答。"
+    tool_service.call_tool_async.assert_awaited_once_with(
+        "web_search",
+        query="白人性魅力 含义 王水牛 洋滤镜",
+    )
+
+
+@pytest.mark.anyio
+async def test_agent_workflow_does_not_execute_or_expose_unknown_dsml_tool() -> None:
+    tool_service = Mock(spec=ToolService)
+    tool_service.list_tools.return_value = [
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+
+    llm = Mock(spec=ChatOpenAI)
+    bound_model = Mock()
+    bound_model.ainvoke = AsyncMock(
+        return_value=AIMessage(
+            content=(
+                "<｜｜DSML｜｜tool_calls>"
+                '<｜｜DSML｜｜invoke name="delete_everything">'
+                "</｜｜DSML｜｜invoke>"
+                "</｜｜DSML｜｜tool_calls>"
+            )
+        )
+    )
+    llm.bind_tools.return_value = bound_model
+
+    workflow = create_agent_workflow(llm, tool_service)
+    result = await workflow.ainvoke(
+        {
+            "session_id": "session-unknown-dsml",
+            "messages": [HumanMessage(content="test")],
+        }
+    )
+
+    answer = result["messages"][-1]
+    assert "DSML" not in answer.content
+    assert "未执行任何工具" in answer.content
+    tool_service.call_tool_async.assert_not_called()
+
+
+@pytest.mark.anyio
 async def test_agent_remembers_messages_in_same_session():
     tool_service = Mock(spec=ToolService)
     tool_service.list_tools.return_value = []

@@ -1,10 +1,65 @@
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    ToolMessage,
+)
 
 from app.services.agent_service import AgentService
+
+
+class FakeStreamingWorkflow:
+    async def astream(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> AsyncIterator[Any]:
+        dsml = "<｜｜DSML｜｜tool_calls>internal protocol</｜｜DSML｜｜tool_calls>"
+        yield (
+            ("tool_agent",),
+            "messages",
+            (AIMessageChunk(content=dsml), {"langgraph_node": "agent"}),
+        )
+        yield (
+            ("tool_agent",),
+            "updates",
+            {
+                "agent": {
+                    "messages": [
+                        AIMessage(
+                            content="",
+                            tool_calls=[
+                                {
+                                    "name": "web_search",
+                                    "args": {"query": "test"},
+                                    "id": "call-dsml",
+                                    "type": "tool_call",
+                                }
+                            ],
+                        )
+                    ]
+                }
+            },
+        )
+        yield (
+            ("tool_agent",),
+            "messages",
+            (
+                AIMessageChunk(content="最终回答"),
+                {"langgraph_node": "agent"},
+            ),
+        )
+        yield (
+            ("tool_agent",),
+            "updates",
+            {"agent": {"messages": [AIMessage(content="最终回答")]}},
+        )
 
 
 @pytest.mark.anyio
@@ -122,3 +177,27 @@ async def test_agent_service_returns_rag_citations() -> None:
     assert response.citations[0].score == 0.8
     assert response.route == "rag"
     assert response.route_reason == "Explicit rag mode was requested."
+
+
+@pytest.mark.anyio
+async def test_stream_does_not_expose_agent_protocol_content() -> None:
+    agent_service = AgentService(FakeStreamingWorkflow())
+
+    events = [
+        event
+        async for event in agent_service._stream_workflow(
+            input_value={},
+            session_id="session-dsml",
+            route="agent",
+            route_reason="test",
+            used_tools=[],
+            citations=[],
+        )
+    ]
+
+    output = "".join(events)
+    assert "internal protocol" not in output
+    assert "event: tool_call" in output
+    assert '"name": "web_search"' in output
+    assert "event: token" in output
+    assert "最终回答" in output

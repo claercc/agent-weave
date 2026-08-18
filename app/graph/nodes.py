@@ -14,7 +14,11 @@ from app.models.output_model import ToolCallResult
 from app.prompts.system import SYSTEM_PROMPT
 from app.services.tool_service import ToolService
 from functools import partial
+from html import unescape
+import json
+import re
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 from anyio import to_thread
 from app.graph.state import (
@@ -30,6 +34,127 @@ from app.prompts.routing import REQUEST_ANALYSIS_PROMPT
 from langgraph.types import interrupt
 
 logger = logging.getLogger(__name__)
+
+
+_DSML_TAG = r"(?:｜｜|\|\|)DSML(?:｜｜|\|\|)"
+_DSML_TOOL_CALLS_PATTERN = re.compile(
+    rf"\s*<{_DSML_TAG}tool_calls>\s*(.*?)\s*</{_DSML_TAG}tool_calls>\s*",
+    re.DOTALL,
+)
+_DSML_INVOKE_PATTERN = re.compile(
+    rf'<{_DSML_TAG}invoke\s+name="([^"]+)">\s*' rf"(.*?)\s*</{_DSML_TAG}invoke>",
+    re.DOTALL,
+)
+_DSML_PARAMETER_PATTERN = re.compile(
+    rf'<{_DSML_TAG}parameter\s+name="([^"]+)"'
+    rf'(?:\s+string="(true|false)")?>\s*'
+    rf"(.*?)\s*</{_DSML_TAG}parameter>",
+    re.DOTALL,
+)
+
+
+def _parse_dsml_tool_calls(
+    content: str,
+    allowed_tool_names: set[str],
+) -> list[dict[str, Any]] | None:
+    """解析兼容模型放在 content 中的 DSML 工具调用。
+
+    只有整段内容都是合法 DSML、且所有工具都在已绑定白名单中时才转换。
+    这样既不会误处理用户可见文本，也不会绕过工具注册边界。
+    """
+
+    outer_match = _DSML_TOOL_CALLS_PATTERN.fullmatch(content)
+
+    if outer_match is None:
+        return None
+
+    invoke_block = outer_match.group(1)
+    invoke_matches = list(_DSML_INVOKE_PATTERN.finditer(invoke_block))
+
+    if not invoke_matches:
+        return None
+
+    if _DSML_INVOKE_PATTERN.sub("", invoke_block).strip():
+        return None
+
+    tool_calls: list[dict[str, Any]] = []
+
+    for invoke_match in invoke_matches:
+        tool_name = unescape(invoke_match.group(1)).strip()
+
+        if tool_name not in allowed_tool_names:
+            return None
+
+        parameter_block = invoke_match.group(2)
+        parameter_matches = list(_DSML_PARAMETER_PATTERN.finditer(parameter_block))
+
+        if _DSML_PARAMETER_PATTERN.sub("", parameter_block).strip():
+            return None
+
+        arguments: dict[str, Any] = {}
+
+        for parameter_match in parameter_matches:
+            parameter_name = unescape(parameter_match.group(1)).strip()
+            is_string = parameter_match.group(2) == "true"
+            raw_value = unescape(parameter_match.group(3)).strip()
+
+            if not parameter_name or parameter_name in arguments:
+                return None
+
+            if is_string:
+                value: Any = raw_value
+            else:
+                try:
+                    value = json.loads(raw_value)
+                except json.JSONDecodeError:
+                    value = raw_value
+
+            arguments[parameter_name] = value
+
+        tool_calls.append(
+            {
+                "name": tool_name,
+                "args": arguments,
+                "id": f"dsml-{uuid4().hex}",
+                "type": "tool_call",
+            }
+        )
+
+    return tool_calls
+
+
+def _normalize_tool_call_response(
+    response: AIMessage,
+    tools: list[BaseTool],
+) -> AIMessage:
+    """把 OpenAI 兼容服务返回的 DSML 文本规范为原生工具调用。"""
+
+    if response.tool_calls or not tools or not isinstance(response.content, str):
+        return response
+
+    parsed_tool_calls = _parse_dsml_tool_calls(
+        response.content,
+        {tool.name for tool in tools},
+    )
+
+    if parsed_tool_calls is None:
+        if re.search(rf"<{_DSML_TAG}tool_calls>", response.content):
+            return response.model_copy(
+                update={
+                    "content": (
+                        "模型生成了无法识别的工具调用，" "本次未执行任何工具，请重试。"
+                    )
+                }
+            )
+
+        return response
+
+    return response.model_copy(
+        update={
+            "content": "",
+            "tool_calls": parsed_tool_calls,
+        }
+    )
 
 
 async def route_request(
@@ -388,6 +513,7 @@ async def agent_node(
     )
     model = llm.bind_tools(tools) if tools else llm
     response = await model.ainvoke(messages)
+    response = _normalize_tool_call_response(response, tools)
     return {"messages": [response]}
 
 

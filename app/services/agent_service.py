@@ -205,7 +205,10 @@ class AgentService:
 
                     content = message_chunk.content
 
-                    if isinstance(content, str) and content:
+                    # 某些 OpenAI 兼容模型会先把工具调用作为 DSML 文本
+                    # 流出，随后才由 agent_node 规范为结构化 tool_calls。
+                    # Agent 节点统一等 updates 事件后再输出，避免内部协议泄漏。
+                    if node_name != "agent" and isinstance(content, str) and content:
                         yield encode_sse(
                             "token",
                             {
@@ -421,6 +424,15 @@ class AgentService:
 
                                 if answer:
                                     final_answer = answer
+
+                                    if node_name == "agent":
+                                        yield encode_sse(
+                                            "token",
+                                            {
+                                                "content": answer,
+                                                "node": node_name,
+                                            },
+                                        )
 
                         if isinstance(
                             graph_message,
