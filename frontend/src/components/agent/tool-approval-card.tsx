@@ -36,14 +36,14 @@ export function ToolApprovalCard({
   const [feedback, setFeedback] = useState("");
 
   return (
-    <Card className="border-amber-500/40 bg-amber-500/5">
+    <Card className="min-w-0 max-w-full border-amber-500/40 bg-amber-500/5">
       <CardHeader>
         <div className="flex items-start gap-3">
           <div className="rounded-xl bg-amber-500/15 p-2 text-amber-600">
             <ShieldAlert className="size-5" />
           </div>
 
-          <div>
+          <div className="min-w-0">
             <CardTitle className="text-base">
               Agent 请求执行操作
             </CardTitle>
@@ -59,10 +59,10 @@ export function ToolApprovalCard({
         {approval.tool_calls.map((toolCall, index) => (
           <div
             key={toolCall.id ?? `${toolCall.name}-${index}`}
-            className="rounded-xl border bg-background p-3"
+            className="min-w-0 rounded-xl border bg-background p-3"
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium">
+              <p className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">
                 {toolCall.name}
               </p>
 
@@ -71,7 +71,7 @@ export function ToolApprovalCard({
               </Badge>
             </div>
 
-            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs leading-5">
+            <pre className="mt-3 max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs leading-5 [overflow-wrap:anywhere]">
               {JSON.stringify(
                 toolCall.arguments,
                 null,

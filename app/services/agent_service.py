@@ -254,6 +254,19 @@ class AgentService:
                         "tool_agent",
                     }:
                         continue
+                    # 如果某个工具需要人工批准，LangGraph 会产生特殊节点：
+                    # {
+                    #     "__interrupt__": (
+                    #         Interrupt(
+                    #             value={
+                    #                 "type": "tool_approval",
+                    #                 "tool_calls": [...]
+                    #             },
+                    #             id="interrupt-id",
+                    #         ),
+                    #     )
+                    # }
+                    # 此时工作流只是暂停，并没有真正结束，所以不能发送 done
                     if node_name == "__interrupt__":
                         was_interrupted = True
 
@@ -283,6 +296,7 @@ class AgentService:
                     if not isinstance(update, dict):
                         continue
 
+                    # 处理路由节点的输出。
                     if node_name == "validate_decision":
                         route = update.get("route", route)
                         route_reason = update.get(

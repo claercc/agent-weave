@@ -190,11 +190,10 @@ const {
         <CardContent className="grid min-h-0 min-w-0 flex-1 grid-cols-1 p-0 lg:grid-cols-[minmax(0,1fr)_24rem]">
             <section className="flex min-h-0 min-w-0 flex-col">
                 <ScrollArea
-                  horizontal
                   type="auto"
                   className="min-h-0 min-w-0 flex-1"
                 >
-                    <div className="min-w-0 space-y-6 p-4 md:p-6">
+                    <div className="w-full min-w-0 max-w-full space-y-6 overflow-x-hidden p-4 md:p-6">
                     {messages.length === 0 && (
                         <div className="flex min-h-80 flex-col items-center justify-center text-center">
                         <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
@@ -216,7 +215,7 @@ const {
                         <div
                         key={message.id}
                         className={cn(
-                            "flex items-start gap-3",
+                            "flex w-full min-w-0 items-start gap-3",
                             message.role === "user" && "flex-row-reverse",
                         )}
                         >
@@ -240,7 +239,7 @@ const {
                         >
                             {message.content ? (
                             <>
-                              <p className="break-words whitespace-pre-wrap">
+                              <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
                                   {message.content}
                               </p>
                               {message.status === "stopped" && (

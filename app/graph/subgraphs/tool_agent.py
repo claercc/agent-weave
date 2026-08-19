@@ -77,6 +77,7 @@ def create_tool_agent_subgraph(
         "tools",
         ToolNode(
             tools,
+            # 处理工具异常，将 ToolMessage 写回 State。
             handle_tool_errors=True,
         ),
     )
