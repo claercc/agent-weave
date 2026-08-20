@@ -37,8 +37,12 @@ class ProposedDecision(TypedDict):
     route: Route
     needs_knowledge: bool
     needs_tools: bool
+    # 是否需要澄清。
+    # 例如，用户请求的文档不存在，或者用户请求的文档内容不清晰。
     requires_clarification: bool
+    # 澄清问题。
     clarification_question: str | None
+    # 重写后的查询。
     rewritten_query: str | None
     reason: str
 

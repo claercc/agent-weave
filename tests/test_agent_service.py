@@ -20,12 +20,16 @@ class FakeStreamingWorkflow:
         *args: object,
         **kwargs: object,
     ) -> AsyncIterator[Any]:
-        dsml = "<｜｜DSML｜｜tool_calls>internal protocol</｜｜DSML｜｜tool_calls>"
-        yield (
-            ("tool_agent",),
-            "messages",
-            (AIMessageChunk(content=dsml), {"langgraph_node": "agent"}),
-        )
+        for content in (
+            "<｜",
+            "｜DSML｜｜tool_",
+            "calls>internal protocol</｜｜DSML｜｜tool_calls>",
+        ):
+            yield (
+                ("tool_agent",),
+                "messages",
+                (AIMessageChunk(content=content), {"langgraph_node": "agent"}),
+            )
         yield (
             ("tool_agent",),
             "updates",
@@ -78,6 +82,26 @@ class FakeChatStreamingWorkflow:
             (),
             "updates",
             {"chat": {"messages": [AIMessage(content="直接回答")]}},
+        )
+
+
+class FakeTypingStreamingWorkflow:
+    async def astream(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> AsyncIterator[Any]:
+        for content in ("逐", "字", "输出"):
+            yield (
+                (),
+                "messages",
+                (AIMessageChunk(content=content), {"langgraph_node": "chat"}),
+            )
+
+        yield (
+            (),
+            "updates",
+            {"chat": {"messages": [AIMessage(content="逐字输出")]}},
         )
 
 
@@ -242,3 +266,26 @@ async def test_stream_does_not_expose_chat_protocol_content() -> None:
     assert "internal protocol" not in output
     assert "event: token" in output
     assert "直接回答" in output
+
+
+@pytest.mark.anyio
+async def test_stream_preserves_chat_typing_effect_without_duplicates() -> None:
+    agent_service = AgentService(FakeTypingStreamingWorkflow())
+
+    events = [
+        event
+        async for event in agent_service._stream_workflow(
+            input_value={},
+            session_id="session-chat-stream",
+            route="chat",
+            route_reason="test",
+            used_tools=[],
+            citations=[],
+        )
+    ]
+
+    token_events = [event for event in events if event.startswith("event: token")]
+    output = "".join(events)
+
+    assert len(token_events) == 3
+    assert output.count("逐字输出") == 1

@@ -19,6 +19,54 @@ from app.utils.stream import encode_sse
 logger = logging.getLogger(__name__)
 
 
+_DSML_OPENING_TAGS = tuple(
+    f"<{left}DSML{right}tool_calls>"
+    for left in ("｜", "｜｜", "|", "||")
+    for right in ("｜", "｜｜", "|", "||")
+)
+
+
+class _ProtocolStreamGuard:
+    """增量识别并拦截位于消息开头的 DSML 工具协议。"""
+
+    def __init__(self) -> None:
+        self._buffer = ""
+        self.suppressed = False
+        self.emitted = False
+
+    def push(self, content: str) -> str:
+        if self.suppressed:
+            return ""
+
+        if self.emitted:
+            return content
+
+        self._buffer += content
+        candidate = self._buffer.lstrip()
+
+        if any(candidate.startswith(tag) for tag in _DSML_OPENING_TAGS):
+            self._buffer = ""
+            self.suppressed = True
+            return ""
+
+        if any(tag.startswith(candidate) for tag in _DSML_OPENING_TAGS):
+            return ""
+
+        visible_content = self._buffer
+        self._buffer = ""
+        self.emitted = bool(visible_content)
+        return visible_content
+
+    def finish(self) -> str:
+        if self.suppressed or not self._buffer:
+            return ""
+
+        visible_content = self._buffer
+        self._buffer = ""
+        self.emitted = True
+        return visible_content
+
+
 class AgentService:
     """运行 LangGraph Agent 并映射普通响应或 SSE 事件。"""
 
@@ -174,6 +222,10 @@ class AgentService:
 
         retrieval_query: str | None = None
         retrieved_candidate_count = 0
+        protocol_guards: dict[
+            tuple[tuple[str, ...], str],
+            _ProtocolStreamGuard,
+        ] = {}
 
         try:
             stream = self._workflow.astream(
@@ -225,19 +277,27 @@ class AgentService:
 
                     content = message_chunk.content
 
-                    # 某些 OpenAI 兼容模型会先把工具调用作为 DSML 文本
-                    # 流出，随后才由 agent_node 规范。chat 节点虽然不绑定
-                    # 工具，模型仍可能误生成该协议，因此两个节点都统一等
-                    # updates 事件后再输出，避免内部协议泄漏。
-                    if (
-                        node_name not in {"agent", "chat"}
-                        and isinstance(content, str)
-                        and content
-                    ):
+                    if not isinstance(content, str) or not content:
+                        continue
+
+                    visible_content = content
+
+                    # agent/chat 可能把 DSML 工具协议分成多个 chunk 输出。
+                    # 仅暂存足以判断协议前缀的少量字符；一旦确认是普通文本，
+                    # 后续 token 立即透传，保留打字机效果。
+                    if node_name in {"agent", "chat"}:
+                        stream_key = (tuple(namespace), node_name)
+                        guard = protocol_guards.setdefault(
+                            stream_key,
+                            _ProtocolStreamGuard(),
+                        )
+                        visible_content = guard.push(content)
+
+                    if visible_content:
                         yield encode_sse(
                             "token",
                             {
-                                "content": content,
+                                "content": visible_content,
                                 "node": node_name,
                             },
                         )
@@ -295,6 +355,24 @@ class AgentService:
 
                     if not isinstance(update, dict):
                         continue
+
+                    guard: _ProtocolStreamGuard | None = None
+
+                    if node_name in {"agent", "chat"}:
+                        stream_key = (tuple(namespace), node_name)
+                        guard = protocol_guards.pop(stream_key, None)
+
+                        if guard is not None:
+                            pending_content = guard.finish()
+
+                            if pending_content:
+                                yield encode_sse(
+                                    "token",
+                                    {
+                                        "content": pending_content,
+                                        "node": node_name,
+                                    },
+                                )
 
                     # 处理路由节点的输出。
                     if node_name == "validate_decision":
@@ -464,7 +542,14 @@ class AgentService:
                                 if answer:
                                     final_answer = answer
 
-                                    if node_name in {"agent", "chat"}:
+                                    # 正常回答已经通过 messages 逐 token 推送。
+                                    # 没有流事件或流内容因 DSML 被拦截时，使用
+                                    # 节点完成后的规范化消息作为兜底。
+                                    if node_name in {"agent", "chat"} and (
+                                        guard is None
+                                        or guard.suppressed
+                                        or not guard.emitted
+                                    ):
                                         yield encode_sse(
                                             "token",
                                             {
