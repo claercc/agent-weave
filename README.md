@@ -70,7 +70,7 @@ PDF / 文本
 → 文档解析
 → OCR 回退
 → 文本分块
-→ BGE 批量生成 512 维归一化向量
+→ 默认 BGE 模型批量生成 512 维归一化向量
 → 显式写入 Chroma
 → 查询向量化
 → cosine 相似度检索
@@ -78,7 +78,7 @@ PDF / 文本
 → 带引用回答
 ```
 
-Embedding 不由 Chroma 隐式生成。入库和查询统一经过 `EmbeddingService`，保证模型、向量维度和相似度语义一致。
+Embedding 不由 Chroma 隐式生成。入库和查询统一经过 `EmbeddingService`，保证模型、向量维度和相似度语义一致；每个 Chroma 集合还会记录 Embedding 模型名称，配置不一致时拒绝查询并提示重新导入。
 
 RAG 执行轨迹会展示：
 
@@ -98,9 +98,10 @@ RAG 执行轨迹会展示：
 | Calculator | 数学计算 | 否 |
 | Time | 时间查询 | 否 |
 | Weather | 天气查询 | 否 |
+| Web Search | Tavily 联网搜索，最多返回 5 条结果 | 否 |
 | Create Support Ticket | 创建模拟支持工单 | 是 |
 
-只读工具可以直接执行。
+只读工具可以直接执行。天气查询仅在调用时需要 `OPENWEATHER_API_KEY`，联网搜索仅在调用时需要 `TAVILY_API_KEY`。
 
 创建工单属于有副作用的业务操作，必须经过人工审批。
 
@@ -157,11 +158,14 @@ tool_call
 approval_required
 approval_resolved
 tool_result
+search_results
 citations
 token
 done
 error
 ```
+
+用户在前端主动停止生成时，前端还会在本地记录 `stopped` 事件；它不是后端发送的 SSE 事件。
 
 前端通过原生 `fetch + ReadableStream` 解析 SSE，不依赖额外流式请求库。
 
@@ -190,7 +194,7 @@ flowchart LR
     Chroma --> Grade[Relevance Grade]
     Grade --> Generate[RAG Generation]
 
-    Agent --> Tools[ToolNode]
+    Agent --> Tools[Calculator / Time / Weather / Web Search / Ticket]
     Agent --> Approval[Human Approval]
     Approval --> Tools
 
@@ -235,16 +239,18 @@ flowchart TD
 
 - Chat、RAG、Agent 和自动路由模式
 - 真正的逐 token 流式回答
-- 知识库集合管理
-- PDF 上传
+- 知识库列表、选择和 PDF 导入
 - 引用来源和相似度展示
 - Agent 请求分析
 - 路由原因
 - RAG 召回和过滤轨迹
 - 工具调用参数
+- 联网搜索结果及来源链接
 - 人工审批卡片
 - 批准或拒绝后恢复执行
+- 主动停止生成和清空当前页面对话
 - Agent 完整事件轨迹
+- 可配置的 HTTP Basic Auth 演示站点访问保护
 
 ## 技术栈
 
@@ -256,6 +262,7 @@ flowchart TD
 - LangChain
 - Pydantic
 - OpenAI-compatible Chat API
+- httpx
 - Sentence Transformers
 - BAAI/bge-small-zh-v1.5
 - Chroma
@@ -288,6 +295,7 @@ flowchart TD
 ```text
 .
 ├── app
+│   ├── adapters            # OpenAI 与领域消息/工具适配
 │   ├── api                 # FastAPI 路由
 │   ├── core                # 配置、日志和生命周期
 │   ├── domain              # 领域类型
@@ -295,9 +303,10 @@ flowchart TD
 │   ├── models              # 模型结构化输出
 │   ├── prompts             # Router、Agent 和 RAG 提示词
 │   ├── rag                 # PDF、OCR、Chunk、Embedding 和 Chroma
+│   ├── repositories        # 内存会话仓储
 │   ├── schemas             # API 请求与响应模型
 │   ├── services            # Agent、RAG、Chat 和 Tool 服务
-│   ├── tools               # Calculator、Weather、Time 和 Ticket
+│   ├── tools               # Calculator、Time、Weather、Web Search 和 Ticket
 │   └── utils               # SSE 等通用工具
 ├── frontend
 │   └── src
@@ -329,8 +338,8 @@ flowchart TD
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/claercc/ai_std_3 ai-agent-backend
-cd ai-agent-backend
+git clone https://github.com/claercc/agent-weave.git
+cd agent-weave
 ```
 
 ### 2. 初始化 Python 环境
@@ -363,7 +372,7 @@ python scripts/bootstrap.py
 Copy-Item .env.example .env
 ```
 
-填写：
+至少填写模型服务配置：
 
 ```dotenv
 OPENAI_API_KEY=你的模型服务密钥
@@ -373,7 +382,18 @@ MODEL_REQUEST_TIMEOUT_SECONDS=30
 MODEL_MAX_RETRIES=2
 ```
 
-天气工具还需要填写 `OPENWEATHER_API_KEY`。本地 Embedding 模型会在首次使用 RAG 时下载。
+其他主要配置：
+
+| 环境变量 | 是否必需 | 说明 |
+|---|---:|---|
+| `EMBEDDING_MODEL` | 否 | 本地 Embedding 模型，默认 `BAAI/bge-small-zh-v1.5` |
+| `OPENWEATHER_API_KEY` | 按需 | 调用天气工具时需要 |
+| `TAVILY_API_KEY` | 按需 | 调用联网搜索工具时需要 |
+| `DEMO_USERNAME` / `DEMO_PASSWORD` | 前端需要 | Next.js 演示站点的 HTTP Basic Auth 凭据 |
+| `FRONTEND_BIND_ADDRESS` / `FRONTEND_PORT` | 否 | Compose 前端监听地址和端口 |
+| `BACKEND_BIND_ADDRESS` / `BACKEND_PORT` | 否 | Compose 后端监听地址和端口 |
+
+本地直接运行后端时，BGE 模型会在首次使用 RAG 时下载。Docker 镜像则在构建阶段下载模型，并在运行阶段启用离线模式。
 
 ### 4. 启动后端
 
@@ -415,17 +435,50 @@ npm.cmd ci
 npm.cmd run dev
 ```
 
-浏览器访问 `http://127.0.0.1:3000`。如果后端不在本机，修改前端的 `BACKEND_BASE_URL`。
+启动前还需要在 `frontend/.env.local` 中设置演示站点凭据：
 
-### Docker 启动后端
+```dotenv
+BACKEND_BASE_URL=http://127.0.0.1:8000
+DEMO_USERNAME=demo
+DEMO_PASSWORD=请设置一个非空密码
+```
+
+浏览器访问 `http://127.0.0.1:3000` 并输入上述凭据。如果后端不在本机，修改 `BACKEND_BASE_URL`。未配置用户名或密码时，前端会返回 `503`。
+
+### Docker Compose 启动
 
 ```bash
 docker compose up --build
 ```
 
-当前 Compose 管理后端、Chroma 数据卷和模型缓存；前端仍按上一节单独启动。
+Compose 会同时启动后端和前端，并管理 Chroma 数据卷和模型缓存。启动前必须在根目录 `.env` 中设置非空的 `DEMO_USERNAME` 和 `DEMO_PASSWORD`。
+
+如果没有覆盖端口变量，Compose 默认访问地址为：
+
+- 前端：`http://127.0.0.1:3000`
+- 后端：`http://127.0.0.1:8000`
+- API 文档：`http://127.0.0.1:8000/docs`
+
+仓库提供的 `.env.example` 面向公网演示，预设前端端口为 `8080`、后端端口为 `8081`，并只把后端绑定到 `127.0.0.1`。复制该文件后，应分别访问 `http://127.0.0.1:8080` 和 `http://127.0.0.1:8081/docs`。
 
 ## API 示例
+
+核心接口：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/health/live` | 进程存活检查 |
+| `GET` | `/api/health/ready` | Agent 与 RAG 服务就绪检查 |
+| `POST` | `/api/agent/chat` | 非流式统一 Agent 请求 |
+| `POST` | `/api/agent/chat/stream` | SSE 统一 Agent 请求 |
+| `POST` | `/api/agent/chat/resume/stream` | 提交审批结果并恢复工作流 |
+| `GET` | `/api/rag/collections` | 列出知识库 |
+| `DELETE` | `/api/rag/collections/{collection_name}` | 删除知识库 |
+| `POST` | `/api/rag/ingest` | 导入文本列表 |
+| `POST` | `/api/rag/ingest/pdf` | 上传并导入 PDF |
+| `POST` | `/api/rag/query` | 使用指定知识库完成传统非流式 RAG 查询 |
+
+`/api/chat`、`/api/chat/stream` 和 `/api/chat/tools` 是早期聊天接口；新功能应优先使用 `/api/agent/*`。
 
 普通 Agent 请求：
 
@@ -443,15 +496,33 @@ curl -N -X POST http://127.0.0.1:8000/api/agent/chat/stream \
   -d '{"session_id":"demo-1","message":"介绍一下这个项目","mode":"chat"}'
 ```
 
-PDF 上传限制为 10 MB、100 页。查询不存在的知识库会返回 `404`。
+RAG 流式请求：
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/api/agent/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"demo-1","message":"这个项目如何处理工具审批？","mode":"rag","collection_name":"project-docs"}'
+```
+
+PDF 上传：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/rag/ingest/pdf \
+  -F "file=@README.pdf;type=application/pdf" \
+  -F "collection_name=project-docs"
+```
+
+PDF 限制为 10 MB、100 页，并校验扩展名和文件签名；纯图片页面会回退到本地 RapidOCR。查询或删除不存在的知识库会返回 `404`。
 
 ## 质量检查
 
 后端：
 
-```bash
-python scripts/check.py
+```powershell
+.\.venv\Scripts\python.exe scripts\check.py
 ```
+
+Linux 或 macOS 使用 `./.venv/bin/python scripts/check.py`。统一脚本依次执行 Black 格式检查、flake8、MyPy 和 pytest。
 
 前端：
 
@@ -467,6 +538,7 @@ GitHub Actions 会同时运行前后端检查。
 ## 已知限制
 
 - LangGraph 当前使用内存 checkpoint，服务重启后会话和待审批状态不会保留。
-- 当前没有用户认证，默认用于本地学习和作品演示，不应直接暴露到公网。
-- Compose 当前只启动后端；生产部署需要为前端和后端配置独立域名、认证与限流。
+- 前端只有面向演示环境的 HTTP Basic Auth；后端 API 本身没有认证和授权，不应直接暴露到公网。
+- 支持工单保存在当前进程内存中，不是持久化工单系统。
+- Compose 面向单机演示；生产部署仍需要 HTTPS、密钥管理、认证授权、限流和可观察性。
 - 本地 BGE、OCR 和 Chroma 更适合单机演示；多实例部署需要独立模型服务和持久化数据库。
